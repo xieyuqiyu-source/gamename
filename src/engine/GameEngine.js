@@ -2,6 +2,7 @@ import {
   BALL, COLORS, DROP, FIXED_STEP, GAME_HEIGHT, GAME_WIDTH,
   LEVEL_ONE, PADDLE, POWERUPS,
 } from '../config/gameConfig.js'
+import { getEndlessLevelConfig } from '../config/levels.js'
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 const TAU = Math.PI * 2
@@ -28,11 +29,17 @@ function createBricks(levelConfig, layout = levelConfig.layout) {
   layout.forEach((row, rowIndex) => [...row].forEach((cell, columnIndex) => {
     const hp = Number(cell)
     if (!hp) return
+    const moving = levelConfig.movingRows?.includes(rowIndex)
+    const x = levelConfig.left + columnIndex * (width + levelConfig.gapX)
     bricks.push({
       id: `${rowIndex}-${columnIndex}`,
-      x: levelConfig.left + columnIndex * (width + levelConfig.gapX),
+      x,
       y: levelConfig.top + rowIndex * (levelConfig.brickHeight + levelConfig.gapY),
       w: width, h: levelConfig.brickHeight, hp, maxHp: hp, flash: 0,
+      moving,
+      baseX: x,
+      motionPhase: rowIndex * 1.17,
+      velocityX: 0,
     })
   }))
   return bricks
@@ -42,9 +49,26 @@ function createBossState(levelConfig, shieldNodes) {
   const config = levelConfig.boss
   if (!config) return null
   const width = 166
+  const bossX = (GAME_WIDTH - width) / 2
+  const modules = config.attackModules
+    ? Array.from({ length: config.attackModules.count }, (_, index) => ({
+      id: `module-${index + 1}`,
+      side: index % 2 === 0 ? 'left' : 'right',
+      x: index % 2 === 0 ? bossX - 38 : bossX + width + 8,
+      y: 138,
+      w: 30,
+      h: 42,
+      hp: config.attackModules.hp,
+      maxHp: config.attackModules.hp,
+      hitCooldown: 0,
+      flash: 0,
+      destroyed: false,
+    }))
+    : []
   return {
+    kind: config.kind || 'prism',
     codename: config.codename,
-    x: (GAME_WIDTH - width) / 2,
+    x: bossX,
     y: 132,
     w: width,
     h: 54,
@@ -60,6 +84,8 @@ function createBossState(levelConfig, shieldNodes) {
     pulse: 0,
     flash: 0,
     defeated: false,
+    modules,
+    attackTimer: config.attackModules?.fireIntervals?.[0] || 0,
   }
 }
 
@@ -97,6 +123,7 @@ export class GameEngine {
     this.waves = []
     this.floaters = []
     this.projectiles = []
+    this.hazards = []
     this.hitStop = 0
     this.flash = 0
     this.shake = 0
@@ -104,6 +131,8 @@ export class GameEngine {
     this.nextBallId = 1
     this.nextDropId = 1
     this.nextRunId = 1
+    this.endlessStartWave = 1
+    this.brickMotionTime = 0
     this.stateVersion = 0
     this.lastPublishedVersion = -1
     this.uiPublishTimer = 0
@@ -125,7 +154,10 @@ export class GameEngine {
     const maxLives = 3 + this.modifiers.extraLives
     const bricks = createBricks(this.levelConfig)
     return {
-      mode: 'menu', runId: 0, level: this.levelConfig.id, levelName: this.levelConfig.name,
+      mode: 'menu', runId: 0, runType: this.levelConfig.endless ? 'endless' : 'campaign',
+      level: this.levelConfig.id, levelName: this.levelConfig.name,
+      wave: this.levelConfig.endless ? this.levelConfig.wave : 0,
+      wavesCleared: 0,
       lives: maxLives, maxLives, shieldCharges: this.modifiers.shieldCharges,
       score: 0, bestScore: this.startingBestScore || 0, coins: this.startingCoins || 0,
       runStartCoins: this.startingCoins || 0, clearBonus: 0, stars: 0,
@@ -172,7 +204,9 @@ export class GameEngine {
     const { bestScore, coins } = this.state
     this.startingCoins = coins
     this.startingBestScore = bestScore
+    if (this.levelConfig.endless) this.levelConfig = getEndlessLevelConfig(this.endlessStartWave)
     this.state = this.createInitialState()
+    this.brickMotionTime = 0
     this.coinBonusCarry = 0
     this.state.runId = this.nextRunId++
     this.state.runStartCoins = coins
@@ -196,14 +230,21 @@ export class GameEngine {
 
   configureLevel(levelConfig, { coins = this.state.coins, bestScore = 0, modifiers = this.modifiers } = {}) {
     this.levelConfig = levelConfig || LEVEL_ONE
+    this.endlessStartWave = this.levelConfig.endless ? this.levelConfig.wave : 1
     this.modifiers = { ...DEFAULT_MODIFIERS, ...modifiers }
     this.startingCoins = coins
     this.startingBestScore = bestScore
     this.state = this.createInitialState()
+    this.brickMotionTime = 0
     this.state.mode = 'briefing'
     this.state.message = '确认任务目标后开始挑战'
     this.clearTransientEffects()
     this.touchState(); this.publish(true); this.render()
+  }
+
+  configureEndless({ wave = 1, coins = this.state.coins, bestScore = 0, modifiers = this.modifiers } = {}) {
+    this.endlessStartWave = Math.max(1, Math.floor(Number(wave) || 1))
+    this.configureLevel(getEndlessLevelConfig(this.endlessStartWave), { coins, bestScore, modifiers })
   }
 
   requestCampaign() {
@@ -236,6 +277,7 @@ export class GameEngine {
     this.waves.length = 0
     this.floaters.length = 0
     this.projectiles.length = 0
+    this.hazards.length = 0
     this.hitStop = 0
     this.flash = 0
   }
@@ -406,10 +448,12 @@ export class GameEngine {
     if (this.state.mode === 'playing') {
       this.updatePowerups(dt)
       this.updateBoss(dt)
-      this.updateBalls(dt)
-      this.updateProjectiles(dt)
-      this.updateDrops(dt)
-      this.updateCombo(dt)
+      this.updateBricks(dt)
+      this.updateHazards(dt)
+      if (this.state.mode === 'playing') this.updateBalls(dt)
+      if (this.state.mode === 'playing') this.updateProjectiles(dt)
+      if (this.state.mode === 'playing') this.updateDrops(dt)
+      if (this.state.mode === 'playing') this.updateCombo(dt)
     }
     this.updateEffects(dt)
     this.publish()
@@ -427,6 +471,17 @@ export class GameEngine {
     }
     paddle.x = clamp(paddle.x, 18, GAME_WIDTH - 18 - paddle.w)
     paddle.velocityX = (paddle.x - oldX) / Math.max(dt, 0.0001)
+  }
+
+  updateBricks(dt) {
+    if (!this.levelConfig.motionAmplitude || !this.state.bricks.some((brick) => brick.moving)) return
+    this.brickMotionTime += dt
+    for (const brick of this.state.bricks) {
+      if (!brick.moving) continue
+      const oldX = brick.x
+      brick.x = brick.baseX + Math.sin(this.brickMotionTime * 1.45 + brick.motionPhase) * this.levelConfig.motionAmplitude
+      brick.velocityX = (brick.x - oldX) / Math.max(dt, 0.0001)
+    }
   }
 
   updateBalls(dt) {
@@ -487,7 +542,14 @@ export class GameEngine {
 
   collideBoss(ball, previousX, previousY) {
     const boss = this.state.boss
-    if (!boss || boss.defeated || !circleRectCollision(ball, boss)) return
+    if (!boss || boss.defeated) return
+    for (const module of boss.modules) {
+      if (module.destroyed || !circleRectCollision(ball, module)) continue
+      this.resolveBrickBounce(ball, module, previousX, previousY)
+      if (module.hitCooldown <= 0) this.damageBossModule(module, ball.x, ball.y, 'ball')
+      return
+    }
+    if (!circleRectCollision(ball, boss)) return
     this.resolveBrickBounce(ball, boss, previousX, previousY)
     if (boss.hitCooldown > 0) return
     if (boss.shieldActive) {
@@ -507,10 +569,17 @@ export class GameEngine {
     const speed = this.levelConfig.boss.phaseSpeeds[boss.phase - 1]
     boss.vx = Math.sign(boss.vx || 1) * speed
     boss.x += boss.vx * dt
-    const minX = 28
-    const maxX = GAME_WIDTH - 28 - boss.w
+    const moduleMargin = boss.modules.length ? 38 : 0
+    const minX = 28 + moduleMargin
+    const maxX = GAME_WIDTH - 28 - boss.w - moduleMargin
     if (boss.x <= minX) { boss.x = minX; boss.vx = Math.abs(boss.vx) }
     if (boss.x >= maxX) { boss.x = maxX; boss.vx = -Math.abs(boss.vx) }
+    boss.modules.forEach((module) => {
+      module.x = module.side === 'left' ? boss.x - module.w - 8 : boss.x + boss.w + 8
+      module.y = boss.y + 6
+      module.hitCooldown = Math.max(0, module.hitCooldown - dt)
+      module.flash = Math.max(0, module.flash - dt)
+    })
     boss.hitCooldown = Math.max(0, boss.hitCooldown - dt)
     boss.flash = Math.max(0, boss.flash - dt)
     boss.pulse = Math.max(0, boss.pulse - dt * 1.8)
@@ -523,7 +592,121 @@ export class GameEngine {
       this.state.message = `棱镜脉冲 · PHASE ${boss.phase}`
       this.touchState()
     }
+    if (!boss.shieldActive && boss.modules.some((module) => !module.destroyed)) {
+      boss.attackTimer -= dt
+      if (boss.attackTimer <= 0) this.fireBossModules()
+    }
     if (boss.shieldActive && this.remainingBricks() === 0) this.breakBossShield()
+  }
+
+  fireBossModules() {
+    const boss = this.state.boss
+    if (!boss || boss.defeated || !this.levelConfig.boss?.attackModules) return false
+    const activeModules = boss.modules.filter((module) => !module.destroyed)
+    if (!activeModules.length) return false
+    const targetX = this.state.paddle.x + this.state.paddle.w / 2
+    for (const module of activeModules) {
+      const x = module.x + module.w / 2
+      const y = module.y + module.h
+      this.hazards.push({
+        id: `${module.id}-${this.state.runId}-${Math.round(this.random() * 1e7)}`,
+        x: x - 7,
+        y,
+        w: 14,
+        h: 24,
+        vx: clamp((targetX - x) * 0.22, -72, 72),
+        vy: 220 + boss.phase * 34,
+        pulse: this.random() * TAU,
+      })
+      this.spawnImpact(x, y, '#55a7ff', 7)
+    }
+    const intervals = this.levelConfig.boss.attackModules.fireIntervals
+    boss.attackTimer = intervals[boss.phase - 1] || intervals.at(-1) || 2
+    this.state.message = `磁暴齐射 · ${activeModules.length} 个攻击模块在线`
+    this.touchState()
+    return true
+  }
+
+  damageBossModule(module, x, y, source = 'ball') {
+    if (!module || module.destroyed || module.hitCooldown > 0) return false
+    if (this.state.boss?.shieldActive) {
+      module.hitCooldown = source === 'laser' ? 0.06 : 0.12
+      module.flash = 0.1
+      this.state.message = '磁盾联锁中 · 先清除阵列节点'
+      this.spawnImpact(x, y, COLORS.cyan, 6)
+      this.touchState()
+      return false
+    }
+    module.hp = Math.max(0, module.hp - 1)
+    module.hitCooldown = source === 'laser' ? 0.08 : 0.14
+    module.flash = 0.18
+    const destroyed = module.hp === 0
+    module.destroyed = destroyed
+    this.state.combo += 1
+    this.state.comboTimer = this.comboWindow()
+    this.state.maxCombo = Math.max(this.state.maxCombo, this.state.combo)
+    const points = destroyed ? 1200 : 420
+    this.state.score += points
+    this.state.bestScore = Math.max(this.state.bestScore, this.state.score)
+    this.floaters.push({ x, y, text: destroyed ? `MODULE DOWN · +${points}` : `MODULE -1 · +${points}`, life: 0.82, color: '#55a7ff' })
+    this.spawnBurst(x, y, destroyed ? COLORS.gold : '#55a7ff', destroyed ? 40 : 16)
+    this.shake = Math.max(this.shake, destroyed ? 7 : 3)
+    this.flash = Math.max(this.flash, destroyed ? 0.2 : 0.08)
+    this.state.message = destroyed ? `${module.side === 'left' ? '左' : '右'}侧攻击模块已摧毁` : `攻击模块耐久 ${module.hp} / ${module.maxHp}`
+    if (destroyed && this.state.boss.modules.every((entry) => entry.destroyed)) {
+      this.hazards.length = 0
+      this.state.message = '全部攻击模块离线 · 磁暴齐射终止'
+    }
+    this.touchState()
+    return true
+  }
+
+  updateHazards(dt) {
+    if (!this.hazards.length) return
+    const initialCount = this.hazards.length
+    const kept = []
+    let clearedByShield = false
+    for (const hazard of this.hazards) {
+      hazard.x += hazard.vx * dt
+      hazard.y += hazard.vy * dt
+      hazard.pulse += dt * 8
+      if (rectCollision(hazard, this.state.paddle)) {
+        const result = this.takeBossHazardHit(hazard)
+        if (this.state.mode !== 'playing') break
+        if (result === 'shield') { clearedByShield = true; break }
+        continue
+      }
+      if (hazard.y < GAME_HEIGHT + 30) kept.push(hazard)
+    }
+    this.hazards = this.state.mode === 'playing' && !clearedByShield ? kept : []
+    if (this.hazards.length !== initialCount) this.touchState()
+  }
+
+  takeBossHazardHit(hazard) {
+    const x = hazard.x + hazard.w / 2
+    const y = this.state.paddle.y
+    if (this.state.shieldCharges > 0) {
+      this.state.shieldCharges -= 1
+      this.hazards.length = 0
+      this.state.message = `能量护盾吸收磁暴 · 剩余 ${this.state.shieldCharges}`
+      this.spawnBurst(x, y, COLORS.cyan, 32)
+      this.waves.push({ x, y, radius: 12, life: 0.52, maxLife: 0.52, color: COLORS.cyan })
+      this.flash = Math.max(this.flash, 0.16)
+      this.shake = Math.max(this.shake, 5)
+      this.touchState(); this.publish(true)
+      return 'shield'
+    }
+    this.spawnBurst(x, y, COLORS.danger, 36)
+    this.flash = Math.max(this.flash, 0.24)
+    this.state.balls = []
+    this.hazards.length = 0
+    this.loseBall()
+    if (this.state.mode === 'ready' && this.modifiers.shieldCharges > 0) {
+      this.state.shieldCharges = 1
+      this.state.message = `磁暴命中 · 生命 -1 · 护盾恢复 ${this.state.shieldCharges}`
+      this.touchState(); this.publish(true)
+    }
+    return 'life'
   }
 
   breakBossShield() {
@@ -531,6 +714,7 @@ export class GameEngine {
     if (!boss || !boss.shieldActive || boss.defeated) return false
     boss.shieldActive = false
     boss.shieldNodes = 0
+    if (boss.modules.some((module) => !module.destroyed)) boss.attackTimer = Math.min(boss.attackTimer, 0.9)
     boss.pulse = 1
     this.flash = Math.max(this.flash, 0.22)
     this.shake = Math.max(this.shake, 6)
@@ -543,6 +727,15 @@ export class GameEngine {
   damageBoss(x, y, source = 'ball') {
     const boss = this.state.boss
     if (!boss || boss.defeated || boss.shieldActive || boss.hitCooldown > 0) return false
+    const activeModules = boss.modules.filter((module) => !module.destroyed)
+    if (boss.hp <= 1 && activeModules.length) {
+      boss.hitCooldown = 0.14
+      boss.flash = 0.12
+      this.state.message = `核心锁定 · 先摧毁 ${activeModules.length} 个攻击模块`
+      this.spawnImpact(x, y, '#55a7ff', 10)
+      this.touchState()
+      return false
+    }
     boss.hp = Math.max(0, boss.hp - 1)
     boss.hitCooldown = source === 'laser' ? 0.09 : 0.16
     boss.flash = 0.18
@@ -584,6 +777,7 @@ export class GameEngine {
     boss.x = (GAME_WIDTH - boss.w) / 2
     boss.vx = (phase % 2 ? 1 : -1) * this.levelConfig.boss.phaseSpeeds[phase - 1]
     boss.hitCooldown = 0.45
+    boss.attackTimer = this.levelConfig.boss.attackModules?.fireIntervals?.[phase - 1] || boss.attackTimer
     boss.pulseTimer = Math.max(2.7, 4.6 - phase * 0.55)
     boss.pulse = 1
     this.state.message = `PHASE ${phase} · 护盾阵列重构`
@@ -654,8 +848,38 @@ export class GameEngine {
     this.touchState()
     if (this.remainingBricks() === 0) {
       if (this.state.boss) this.breakBossShield()
+      else if (this.state.runType === 'endless') this.advanceEndlessWave()
       else this.winLevel()
     }
+  }
+
+  advanceEndlessWave() {
+    if (this.state.runType !== 'endless' || this.state.mode !== 'playing') return false
+    const completedWave = this.state.wave
+    this.state.wavesCleared = Math.max(this.state.wavesCleared, completedWave)
+    this.state.score += 500 * completedWave
+    this.state.bestScore = Math.max(this.state.bestScore, this.state.score)
+    this.state.wave += 1
+    this.levelConfig = getEndlessLevelConfig(this.state.wave)
+    this.state.bricks = createBricks(this.levelConfig)
+    this.brickMotionTime = 0
+    this.state.destroyedCount = 0
+    for (const ball of this.state.balls) {
+      const current = Math.max(1, Math.hypot(ball.vx, ball.vy))
+      const waveBaseSpeed = BALL.launchSpeed * this.levelConfig.ballSpeedMultiplier
+      const speed = Math.min(BALL.maxSpeed, Math.max(current, waveBaseSpeed))
+      ball.vx = ball.vx / current * speed
+      ball.vy = ball.vy / current * speed
+      ball.lastHitBrickId = null
+      ball.brickHitCooldown = 0
+    }
+    this.state.message = `WAVE ${completedWave} 清除 · 磁域重构至 WAVE ${this.state.wave}`
+    this.spawnBurst(GAME_WIDTH / 2, 328, '#55a7ff', 64)
+    this.waves.push({ x: GAME_WIDTH / 2, y: 328, radius: 18, life: 0.78, maxLife: 0.78, color: '#55a7ff' })
+    this.flash = Math.max(this.flash, 0.26)
+    this.shake = Math.max(this.shake, 7)
+    this.touchState(); this.publish(true)
+    return true
   }
 
   updateCombo(dt) {
@@ -811,6 +1035,13 @@ export class GameEngine {
         if (brick.hp > 0 && rectCollision(shot, brick)) { this.damageBrick(brick, shot.x + shot.w / 2, shot.y, 'laser'); hit = true; break }
       }
       const boss = this.state.boss
+      if (!hit && boss && !boss.defeated) {
+        const module = boss.modules.find((entry) => !entry.destroyed && rectCollision(shot, entry))
+        if (module) {
+          this.damageBossModule(module, shot.x + shot.w / 2, shot.y, 'laser')
+          hit = true
+        }
+      }
       if (!hit && boss && !boss.defeated && rectCollision(shot, boss)) {
         if (!boss.shieldActive) this.damageBoss(shot.x + shot.w / 2, shot.y, 'laser')
         else this.spawnImpact(shot.x, shot.y, COLORS.cyan, 5)
@@ -823,7 +1054,7 @@ export class GameEngine {
 
   loseBall() {
     this.state.combo = 0; this.state.comboTimer = 0
-    this.state.drops = []; this.projectiles = []
+    this.state.drops = []; this.projectiles = []; this.hazards = []
     for (const type of ['expand', 'pierce', 'slow', 'laser']) {
       this.state.powerups[type].remaining = 0
       if (type === 'expand') this.state.powerups[type].stacks = 0
@@ -863,7 +1094,7 @@ export class GameEngine {
     this.state.balls = []
     this.state.mode = 'won'; this.state.message = `任务完成 · ${this.state.stars} 星评价`
     this.state.combo = 0; this.state.comboTimer = 0
-    this.state.drops = []; this.projectiles = []
+    this.state.drops = []; this.projectiles = []; this.hazards = []
     for (const type of ['expand', 'pierce', 'slow', 'laser']) {
       this.state.powerups[type].remaining = 0
       if (type === 'expand') this.state.powerups[type].stacks = 0
@@ -930,6 +1161,7 @@ export class GameEngine {
     if (!boss) return null
     return {
       codename: boss.codename,
+      kind: boss.kind,
       hp: boss.hp,
       maxHp: boss.maxHp,
       phase: boss.phase,
@@ -940,12 +1172,25 @@ export class GameEngine {
       y: boss.y,
       width: boss.w,
       defeated: boss.defeated,
+      modules: boss.modules.map((module) => ({
+        id: module.id,
+        side: module.side,
+        hp: module.hp,
+        maxHp: module.maxHp,
+        destroyed: module.destroyed,
+        x: +module.x.toFixed(1),
+        y: module.y,
+      })),
+      modulesAlive: boss.modules.filter((module) => !module.destroyed).length,
+      hazards: this.hazards.length,
     }
   }
 
   getSummary() {
     return {
-      mode: this.state.mode, runId: this.state.runId, level: this.state.level, levelName: this.state.levelName,
+      mode: this.state.mode, runId: this.state.runId, runType: this.state.runType,
+      level: this.state.level, levelName: this.state.levelName,
+      wave: this.state.wave, wavesCleared: this.state.wavesCleared,
       lives: this.state.lives, maxLives: this.state.maxLives, shieldCharges: this.state.shieldCharges,
       score: this.state.score, bestScore: this.state.bestScore,
       coins: this.state.coins,
@@ -962,7 +1207,7 @@ export class GameEngine {
         chapter: this.levelConfig.chapter, accent: this.levelConfig.accent, isBoss: this.levelConfig.isBoss,
         targetScore: this.levelConfig.targetScore, targetCombo: this.levelConfig.targetCombo,
       },
-      boss: this.bossSummary(),
+      boss: this.bossSummary(), hazardCount: this.hazards.length,
       runModifiers: { ...this.modifiers },
     }
   }
@@ -970,7 +1215,8 @@ export class GameEngine {
   getTextState() {
     return JSON.stringify({
       coordinateSystem: `canvas ${GAME_WIDTH}x${GAME_HEIGHT}; origin top-left; x right; y down`,
-      mode: this.state.mode, runId: this.state.runId,
+      mode: this.state.mode, runId: this.state.runId, runType: this.state.runType,
+      wave: this.state.wave, wavesCleared: this.state.wavesCleared,
       level: {
         id: this.state.level,
         name: this.state.levelName,
@@ -991,9 +1237,11 @@ export class GameEngine {
       resumeCountdown: Number(this.state.resumeCountdown.toFixed(1)),
       paddle: { x: +this.state.paddle.x.toFixed(1), y: this.state.paddle.y, width: +this.state.paddle.w.toFixed(1), velocityX: +this.state.paddle.velocityX.toFixed(1) },
       balls: this.state.balls.map((ball) => ({ id: ball.id, x: +ball.x.toFixed(1), y: +ball.y.toFixed(1), vx: +ball.vx.toFixed(1), vy: +ball.vy.toFixed(1), radius: ball.r, stuck: ball.stuck, stallTimer: +ball.stallTimer.toFixed(1) })),
-      bricks: this.state.bricks.filter((brick) => brick.hp > 0).map((brick) => ({ id: brick.id, x: +brick.x.toFixed(1), y: brick.y, width: +brick.w.toFixed(1), height: brick.h, hp: brick.hp, maxHp: brick.maxHp })),
+      bricks: this.state.bricks.filter((brick) => brick.hp > 0).map((brick) => ({ id: brick.id, x: +brick.x.toFixed(1), y: brick.y, width: +brick.w.toFixed(1), height: brick.h, hp: brick.hp, maxHp: brick.maxHp, moving: brick.moving, velocityX: +brick.velocityX.toFixed(1) })),
       drops: this.state.drops.map((drop) => ({ kind: drop.kind, type: drop.type || 'coin', x: +drop.x.toFixed(1), y: +drop.y.toFixed(1) })),
-      projectiles: this.projectiles.length, activeEffects: this.activeEffects(),
+      projectiles: this.projectiles.length,
+      hazards: this.hazards.map((hazard) => ({ x: +hazard.x.toFixed(1), y: +hazard.y.toFixed(1), vx: +hazard.vx.toFixed(1), vy: hazard.vy })),
+      activeEffects: this.activeEffects(),
       bricksRemaining: this.remainingBricks(), totalBricks: this.state.bricks.length,
       effects: { particles: this.particles.length, pool: this.particlePool.length, waves: this.waves.length, trailPoints: this.trail.length, shake: +this.shake.toFixed(1) },
       boss: this.bossSummary(),
@@ -1021,7 +1269,7 @@ export class GameEngine {
     const sy = canShake && this.shake ? (Math.random() - 0.5) * this.shake : 0
     ctx.save(); ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT); ctx.translate(sx, sy)
     this.drawBackground(ctx); this.drawHud(ctx); this.drawBoss(ctx); this.drawBricks(ctx); this.drawTrail(ctx)
-    this.drawDrops(ctx); this.drawProjectiles(ctx); this.drawPaddle(ctx); this.drawBalls(ctx)
+    this.drawDrops(ctx); this.drawProjectiles(ctx); this.drawHazards(ctx); this.drawPaddle(ctx); this.drawBalls(ctx)
     this.drawEffects(ctx); this.drawModeOverlay(ctx)
     if (this.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${this.flash})`; ctx.fillRect(-12, -12, GAME_WIDTH + 24, GAME_HEIGHT + 24) }
     ctx.restore()
@@ -1031,17 +1279,19 @@ export class GameEngine {
     const gradient = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT)
     gradient.addColorStop(0, COLORS.backgroundTop); gradient.addColorStop(1, COLORS.backgroundBottom)
     ctx.fillStyle = gradient; ctx.fillRect(-12, -12, GAME_WIDTH + 24, GAME_HEIGHT + 24)
-    ctx.strokeStyle = 'rgba(85,244,221,.055)'; ctx.lineWidth = 1
+    ctx.save(); ctx.strokeStyle = this.levelConfig.accent; ctx.globalAlpha = .055; ctx.lineWidth = 1
     for (let x = 14; x < GAME_WIDTH; x += 44) { ctx.beginPath(); ctx.moveTo(x, 108); ctx.lineTo(x, GAME_HEIGHT); ctx.stroke() }
     for (let y = 112; y < GAME_HEIGHT; y += 44) { ctx.beginPath(); ctx.moveTo(14, y); ctx.lineTo(GAME_WIDTH - 14, y); ctx.stroke() }
-    ctx.strokeStyle = this.levelConfig.accent; ctx.globalAlpha = .28; ctx.lineWidth = 2; ctx.strokeRect(14, 112, GAME_WIDTH - 28, GAME_HEIGHT - 128); ctx.globalAlpha = 1
+    ctx.globalAlpha = .28; ctx.lineWidth = 2; ctx.strokeRect(14, 112, GAME_WIDTH - 28, GAME_HEIGHT - 128); ctx.restore()
   }
 
   drawHud(ctx) {
     ctx.fillStyle = 'rgba(8,20,31,.94)'; ctx.fillRect(0, 0, GAME_WIDTH, 112)
     ctx.textAlign = 'left'; ctx.fillStyle = COLORS.cyan; ctx.font = '800 14px system-ui'; ctx.fillText('NEON BREAKER', 24, 27)
     ctx.fillStyle = COLORS.text; ctx.font = '800 24px system-ui'; ctx.fillText(String(this.state.score).padStart(6, '0'), 24, 62)
-    ctx.fillStyle = COLORS.muted; ctx.font = '600 11px system-ui'; ctx.fillText(`LV ${String(this.state.level).padStart(2, '0')} · ${this.remainingBricks()} BRICKS`, 24, 88)
+    ctx.fillStyle = COLORS.muted; ctx.font = '600 11px system-ui'; ctx.fillText(this.state.runType === 'endless'
+      ? `WAVE ${String(this.state.wave).padStart(2, '0')} · ${this.remainingBricks()} BRICKS`
+      : `LV ${String(this.state.level).padStart(2, '0')} · ${this.remainingBricks()} BRICKS`, 24, 88)
     if (this.state.combo > 1) {
       ctx.textAlign = 'center'; ctx.fillStyle = this.state.combo >= 10 ? COLORS.gold : COLORS.magenta
       ctx.font = `900 ${Math.min(26, 17 + this.state.combo / 3)}px system-ui`; ctx.fillText(`${this.state.combo} COMBO`, GAME_WIDTH / 2, 50)
@@ -1060,7 +1310,8 @@ export class GameEngine {
       const barX = GAME_WIDTH / 2 - 78
       const hpRatio = boss.hp / boss.maxHp
       ctx.textAlign = 'center'; ctx.fillStyle = boss.shieldActive ? COLORS.cyan : COLORS.gold
-      ctx.font = '800 9px ui-monospace, monospace'; ctx.fillText(`BOSS P${boss.phase}/${boss.maxPhases} · ${boss.shieldActive ? `SHIELD ${this.remainingBricks()}` : `CORE ${boss.hp}`}`, GAME_WIDTH / 2, 82)
+      const moduleSignal = boss.modules.length ? ` · M${boss.modules.filter((module) => !module.destroyed).length}` : ''
+      ctx.font = '800 9px ui-monospace, monospace'; ctx.fillText(`BOSS P${boss.phase}/${boss.maxPhases} · ${boss.shieldActive ? `SHIELD ${this.remainingBricks()}` : `CORE ${boss.hp}`}${moduleSignal}`, GAME_WIDTH / 2, 82)
       ctx.fillStyle = 'rgba(255,255,255,.1)'; ctx.fillRect(barX, 91, 156, 4)
       const bar = ctx.createLinearGradient(barX, 0, barX + 156, 0)
       bar.addColorStop(0, COLORS.magenta); bar.addColorStop(1, COLORS.gold)
@@ -1082,6 +1333,22 @@ export class GameEngine {
       ctx.shadowBlur = 24
       ctx.beginPath(); ctx.ellipse(cx, cy, boss.w * (0.58 + (1 - boss.pulse) * 0.18), 40 + (1 - boss.pulse) * 20, 0, 0, TAU); ctx.stroke()
       ctx.globalAlpha = 1
+    }
+    for (const module of boss.modules) {
+      ctx.save()
+      ctx.globalAlpha = module.destroyed ? .22 : 1
+      ctx.shadowColor = module.destroyed ? COLORS.danger : '#55a7ff'
+      ctx.shadowBlur = module.destroyed ? 5 : 20
+      ctx.fillStyle = module.flash > 0 ? '#ffffff' : module.destroyed ? 'rgba(62,32,48,.82)' : 'rgba(13,35,58,.98)'
+      ctx.strokeStyle = module.destroyed ? COLORS.danger : '#55a7ff'
+      ctx.lineWidth = 2
+      ctx.beginPath(); ctx.roundRect(module.x, module.y, module.w, module.h, 8); ctx.fill(); ctx.stroke()
+      ctx.fillStyle = module.destroyed ? '#50303c' : '#9bd0ff'
+      ctx.beginPath(); ctx.arc(module.x + module.w / 2, module.y + 13, 6, 0, TAU); ctx.fill()
+      ctx.fillStyle = 'rgba(255,255,255,.1)'; ctx.fillRect(module.x + 5, module.y + module.h - 9, module.w - 10, 3)
+      ctx.fillStyle = module.destroyed ? COLORS.danger : '#55a7ff'
+      ctx.fillRect(module.x + 5, module.y + module.h - 9, (module.w - 10) * module.hp / module.maxHp, 3)
+      ctx.restore()
     }
     ctx.shadowColor = boss.shieldActive ? COLORS.cyan : COLORS.gold
     ctx.shadowBlur = boss.flash > 0 ? 38 : 22
@@ -1108,6 +1375,23 @@ export class GameEngine {
     ctx.restore()
   }
 
+  drawHazards(ctx) {
+    for (const hazard of this.hazards) {
+      const cx = hazard.x + hazard.w / 2
+      const cy = hazard.y + hazard.h / 2
+      ctx.save()
+      ctx.translate(cx, cy)
+      ctx.rotate(Math.sin(hazard.pulse) * .16)
+      ctx.shadowColor = '#55a7ff'; ctx.shadowBlur = 22
+      const gradient = ctx.createLinearGradient(0, -12, 0, 12)
+      gradient.addColorStop(0, '#d8ecff'); gradient.addColorStop(.35, '#55a7ff'); gradient.addColorStop(1, '#704dff')
+      ctx.fillStyle = gradient
+      ctx.beginPath(); ctx.moveTo(0, -13); ctx.lineTo(8, 0); ctx.lineTo(0, 13); ctx.lineTo(-8, 0); ctx.closePath(); ctx.fill()
+      ctx.strokeStyle = 'rgba(218,239,255,.8)'; ctx.lineWidth = 1; ctx.stroke()
+      ctx.restore()
+    }
+  }
+
   drawBricks(ctx) {
     for (const brick of this.state.bricks) {
       if (brick.hp <= 0) continue
@@ -1119,6 +1403,11 @@ export class GameEngine {
       if (reinforced) {
         ctx.shadowBlur = 0; ctx.fillStyle = 'rgba(15,10,35,.7)'; ctx.fillRect(brick.x + 9, brick.y + brick.h / 2 - 1, brick.w - 18, 2)
         for (let i = 0; i < brick.maxHp; i += 1) { ctx.fillStyle = i < brick.hp ? COLORS.gold : 'rgba(255,255,255,.16)'; ctx.beginPath(); ctx.arc(brick.x + brick.w / 2 + (i - (brick.maxHp - 1) / 2) * 10, brick.y + brick.h / 2, 3, 0, TAU); ctx.fill() }
+      }
+      if (brick.moving) {
+        ctx.shadowBlur = 0; ctx.fillStyle = 'rgba(218,239,255,.78)'
+        ctx.beginPath(); ctx.moveTo(brick.x + 7, brick.y + 5); ctx.lineTo(brick.x + 12, brick.y + 5); ctx.lineTo(brick.x + 9.5, brick.y + 8); ctx.closePath(); ctx.fill()
+        ctx.beginPath(); ctx.moveTo(brick.x + brick.w - 7, brick.y + 5); ctx.lineTo(brick.x + brick.w - 12, brick.y + 5); ctx.lineTo(brick.x + brick.w - 9.5, brick.y + 8); ctx.closePath(); ctx.fill()
       }
       ctx.restore()
     }
@@ -1209,12 +1498,13 @@ export class GameEngine {
       this.drawOverlayButton(ctx, '进入战役', 632)
       ctx.fillStyle = COLORS.muted; ctx.font = '500 12px system-ui'; ctx.fillText('点击战场或按 ENTER', GAME_WIDTH / 2, 718)
     } else if (mode === 'briefing') {
+      if (this.state.runType === 'endless') { this.drawEndlessBriefing(ctx); return }
       ctx.fillStyle = this.levelConfig.accent; ctx.font = '900 13px system-ui'; ctx.fillText(`${this.levelConfig.chapterCodename} / MISSION BRIEFING`, GAME_WIDTH / 2, 208)
       ctx.fillStyle = COLORS.text; ctx.font = '900 34px system-ui'; ctx.fillText(`${String(this.state.level).padStart(2, '0')} · ${this.state.levelName}`, GAME_WIDTH / 2, 260)
       ctx.fillStyle = COLORS.muted; ctx.font = '500 12px system-ui'; ctx.fillText(this.levelConfig.isBoss ? '守关核心预备战 · 高额清关奖励' : this.levelConfig.chapter, GAME_WIDTH / 2, 292)
 
       const criteria = [
-        ['Ⅰ', '完成关卡', this.levelConfig.isBoss ? '击破三阶段棱镜核心' : '清除全部砖块', COLORS.cyan],
+        ['Ⅰ', '完成关卡', this.levelConfig.isBoss ? (this.levelConfig.boss?.objective || '击破三阶段棱镜核心') : '清除全部砖块', COLORS.cyan],
         ['Ⅱ', '保持能量', '剩余至少 2 条生命', COLORS.magenta],
         ['Ⅲ', '达成精通', `${this.levelConfig.targetScore} 分或 ${this.levelConfig.targetCombo} 连击`, COLORS.gold],
       ]
@@ -1238,8 +1528,55 @@ export class GameEngine {
     } else if (mode === 'won') {
       this.drawSettlement(ctx, true)
     } else if (mode === 'lost') {
-      this.drawSettlement(ctx, false)
+      if (this.state.runType === 'endless') this.drawEndlessSettlement(ctx)
+      else this.drawSettlement(ctx, false)
     }
+  }
+
+  drawEndlessBriefing(ctx) {
+    ctx.textAlign = 'center'
+    ctx.fillStyle = '#55a7ff'; ctx.font = '900 13px system-ui'; ctx.fillText('ENDLESS MAGNETIC FIELD', GAME_WIDTH / 2, 202)
+    ctx.fillStyle = COLORS.text; ctx.font = '900 37px system-ui'; ctx.fillText('无尽磁域', GAME_WIDTH / 2, 258)
+    ctx.fillStyle = COLORS.muted; ctx.font = '500 12px system-ui'; ctx.fillText('生命、分数、晶币和模块效果跨波保留', GAME_WIDTH / 2, 292)
+    const criteria = [
+      ['∞', '连续波次', '清空砖阵后立即进入下一波', '#55a7ff'],
+      ['↗', '动态威胁', '球速与强化砖密度逐波提升', COLORS.magenta],
+      ['◆', '本地纪录', '保存最高分、波次与最高连击', COLORS.gold],
+    ]
+    criteria.forEach(([number, title, detail, color], index) => {
+      const y = 346 + index * 78
+      ctx.fillStyle = 'rgba(9,25,36,.86)'; ctx.strokeStyle = `${color}55`; ctx.lineWidth = 1
+      ctx.beginPath(); ctx.roundRect(76, y, GAME_WIDTH - 152, 60, 12); ctx.fill(); ctx.stroke()
+      ctx.textAlign = 'left'; ctx.fillStyle = color; ctx.font = '900 15px system-ui'; ctx.fillText(number, 96, y + 26)
+      ctx.fillStyle = COLORS.text; ctx.font = '800 13px system-ui'; ctx.fillText(title, 132, y + 24)
+      ctx.fillStyle = COLORS.muted; ctx.font = '500 11px system-ui'; ctx.fillText(detail, 132, y + 43)
+    })
+    ctx.textAlign = 'center'; this.drawOverlayButton(ctx, '进入无尽磁域', 626)
+    ctx.fillStyle = COLORS.muted; ctx.font = '500 12px system-ui'; ctx.fillText(`${this.state.maxLives} 条生命 · 失败后自动保存纪录`, GAME_WIDTH / 2, 714)
+  }
+
+  drawEndlessSettlement(ctx) {
+    ctx.textAlign = 'center'
+    ctx.fillStyle = '#55a7ff'; ctx.font = '900 13px system-ui'; ctx.fillText('ENDLESS RUN COMPLETE', GAME_WIDTH / 2, 206)
+    ctx.fillStyle = COLORS.text; ctx.font = '900 34px system-ui'; ctx.fillText(`抵达 WAVE ${this.state.wave}`, GAME_WIDTH / 2, 260)
+    ctx.fillStyle = COLORS.muted; ctx.font = '600 12px system-ui'; ctx.fillText(`已清除 ${this.state.wavesCleared} 波磁域`, GAME_WIDTH / 2, 294)
+    const stats = [
+      ['最终得分', String(this.state.score).padStart(6, '0'), '#55a7ff'],
+      ['最高连击', `${this.state.maxCombo}`, COLORS.magenta],
+      ['本局晶币', `+${Math.max(0, this.state.coins - this.state.runStartCoins)}`, COLORS.gold],
+    ]
+    stats.forEach(([label, value, color], index) => {
+      const x = 66 + index * 140
+      ctx.fillStyle = 'rgba(9,25,36,.88)'; ctx.strokeStyle = `${color}44`; ctx.lineWidth = 1
+      ctx.beginPath(); ctx.roundRect(x, 360, 128, 90, 12); ctx.fill(); ctx.stroke()
+      ctx.fillStyle = COLORS.muted; ctx.font = '600 10px system-ui'; ctx.fillText(label, x + 64, 391)
+      ctx.fillStyle = color; ctx.font = '900 20px ui-monospace, monospace'; ctx.fillText(value, x + 64, 426)
+    })
+    ctx.fillStyle = 'rgba(85,167,255,.07)'; ctx.strokeStyle = 'rgba(85,167,255,.3)'
+    ctx.beginPath(); ctx.roundRect(96, 502, GAME_WIDTH - 192, 56, 11); ctx.fill(); ctx.stroke()
+    ctx.fillStyle = '#9bd0ff'; ctx.font = '800 12px system-ui'; ctx.fillText('最高纪录与本局晶币已保存', GAME_WIDTH / 2, 536)
+    this.drawOverlayButton(ctx, '再次进入', 626)
+    ctx.fillStyle = COLORS.muted; ctx.font = '500 11px system-ui'; ctx.fillText('可从操作终端返回战役大厅', GAME_WIDTH / 2, 714)
   }
 
   drawSettlement(ctx, won) {

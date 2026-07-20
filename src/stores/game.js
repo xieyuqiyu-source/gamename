@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import {
   createDefaultSave,
   loadGameSave,
+  recordEndlessSettlement,
   recordRunSettlement,
   SAVE_KEY,
   writeGameSave,
@@ -35,6 +36,7 @@ export const useGameStore = defineStore('game', {
     selectedChapter: 1,
 
     mode: 'menu',
+    runType: 'campaign',
     runId: 0,
     level: 1,
     levelName: '初次折射',
@@ -59,6 +61,9 @@ export const useGameStore = defineStore('game', {
     resumeCountdown: 0,
     levelMeta: { chapter: '霓虹启程', accent: '#55f4dd', isBoss: false, targetScore: 15000, targetCombo: 35 },
     boss: null,
+    wave: 0,
+    wavesCleared: 0,
+    hazardCount: 0,
     runModifiers: {},
   }),
 
@@ -124,6 +129,7 @@ export const useGameStore = defineStore('game', {
 
     syncFromEngine(snapshot, { settle = true } = {}) {
       this.mode = snapshot.mode
+      this.runType = snapshot.runType || 'campaign'
       this.runId = snapshot.runId
       this.level = snapshot.level
       this.levelName = snapshot.levelName
@@ -148,6 +154,9 @@ export const useGameStore = defineStore('game', {
       this.resumeCountdown = snapshot.resumeCountdown || 0
       this.levelMeta = snapshot.levelMeta || this.levelMeta
       this.boss = snapshot.boss || null
+      this.wave = snapshot.wave || 0
+      this.wavesCleared = snapshot.wavesCleared || 0
+      this.hazardCount = snapshot.hazardCount || 0
       this.runModifiers = snapshot.runModifiers || {}
 
       if (settle && ['won', 'lost'].includes(snapshot.mode) && snapshot.runId > 0 && snapshot.runId !== this.lastSettledRunId) {
@@ -156,8 +165,11 @@ export const useGameStore = defineStore('game', {
     },
 
     settleRun(snapshot) {
-      const updated = recordRunSettlement(this.exportSave(), snapshot)
-      const runRecord = updated.campaign.levelRecords[String(snapshot.level)]
+      const endlessRun = snapshot.runType === 'endless'
+      const updated = endlessRun
+        ? recordEndlessSettlement(this.exportSave(), snapshot)
+        : recordRunSettlement(this.exportSave(), snapshot)
+      const runRecord = endlessRun ? null : updated.campaign.levelRecords[String(snapshot.level)]
       this.applySave(updated, { source: 'formal' })
       this.coins = snapshot.coins
       this.score = snapshot.score
@@ -165,7 +177,7 @@ export const useGameStore = defineStore('game', {
       this.stars = snapshot.stars
       this.lastSettledRunId = snapshot.runId
       writeGameSave(updated)
-      this.bestScore = runRecord.highScore
+      this.bestScore = endlessRun ? updated.endless.highScore : runRecord.highScore
       this.saveStatus = 'saved'
     },
 
@@ -174,6 +186,7 @@ export const useGameStore = defineStore('game', {
       this.applySave(fresh, { source: 'new' })
       this.lastSettledRunId = 0
       this.mode = 'menu'
+      this.runType = 'campaign'
       this.runId = 0
       this.score = 0
       this.runCoinsEarned = 0
@@ -182,6 +195,9 @@ export const useGameStore = defineStore('game', {
       this.starBreakdown = { clear: false, survivor: false, mastery: false }
       this.combo = 0
       this.activeEffects = []
+      this.wave = 0
+      this.wavesCleared = 0
+      this.hazardCount = 0
       this.selectedLevel = 1
       this.selectedChapter = 1
       this.screen = 'title'
@@ -254,6 +270,7 @@ export const useGameStore = defineStore('game', {
         upgrades: { ...this.upgrades },
         upgradeRefund: this.upgradeRefund,
         claimedStarRewards: [...this.claimedStarRewards],
+        endless: { ...this.endless },
         backupKey: this.saveBackupKey,
       }
     },

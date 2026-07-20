@@ -4,6 +4,7 @@ import {
   createDefaultSave,
   LEGACY_STORE_KEY,
   loadGameSave,
+  recordEndlessSettlement,
   recordRunSettlement,
   SAVE_KEY,
 } from '../src/services/saveService.js'
@@ -107,4 +108,25 @@ test('第一章顺序通关后解锁第六关并保留五关记录', () => {
   assert.equal(save.campaign.highestUnlockedLevel, 6)
   assert.deepEqual(Object.keys(save.campaign.levelRecords).map(Number), [1, 2, 3, 4, 5])
   assert.ok(Object.values(save.campaign.levelRecords).every((record) => record.clears === 1 && record.stars === 3))
+})
+
+test('第二章通关后解锁无尽模式', () => {
+  let save = createDefaultSave(1000)
+  for (let level = 1; level <= 10; level += 1) {
+    save = recordRunSettlement(save, {
+      mode: 'won', runId: level, level, score: 30000 + level,
+      maxCombo: 60, lives: 3, stars: 3, coins: level * 30, runCoinsEarned: 30,
+    }, 6000 + level)
+  }
+  assert.equal(save.campaign.highestUnlockedLevel, 11)
+  assert.equal(save.endless.unlocked, true)
+})
+
+test('无尽结算保存最高分、最高波次和最佳连击且不会降低记录', () => {
+  const base = createDefaultSave(1000)
+  base.endless.unlocked = true
+  const first = recordEndlessSettlement(base, { coins: 80, score: 42000, wave: 7, maxCombo: 63 }, 7000)
+  const second = recordEndlessSettlement(first, { coins: 95, score: 18000, wave: 4, maxCombo: 29 }, 8000)
+  assert.deepEqual(second.endless, { unlocked: true, highScore: 42000, highestWave: 7, bestCombo: 63 })
+  assert.equal(second.currency.coins, 95)
 })

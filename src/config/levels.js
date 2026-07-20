@@ -80,6 +80,75 @@ const FIRST_CHAPTER_LEVELS = [
   },
 ]
 
+const SECOND_CHAPTER_LEVELS = [
+  {
+    name: '磁轨入口',
+    description: '沿双轨磁道切入蓝色街区，利用纵向通道建立高速连击。',
+    targetScore: 23800,
+    targetCombo: 50,
+    clearBonus: 44,
+    ballSpeedMultiplier: 1.125,
+    layout: ['211000112', '122000221', '112101211', '012222210', '112101211', '122000221', '211000112'],
+  },
+  {
+    name: '蓝移回环',
+    description: '上下磁轨周期横移，环形强化阵列持续改变回球角度。',
+    targetScore: 25600,
+    targetCombo: 54,
+    clearBonus: 50,
+    ballSpeedMultiplier: 1.15,
+    movingRows: [1, 5],
+    motionAmplitude: 14,
+    layout: ['012222210', '120111021', '201000102', '211000112', '201000102', '120111021', '012222210'],
+  },
+  {
+    name: '极性迷阵',
+    description: '三层磁轨反向横移，连续破坏交错强化节点才能打开球路。',
+    targetScore: 27800,
+    targetCombo: 58,
+    clearBonus: 56,
+    ballSpeedMultiplier: 1.175,
+    movingRows: [0, 3, 6],
+    motionAmplitude: 16,
+    layout: ['212101212', '121212121', '012121210', '201212102', '012121210', '121212121', '212101212'],
+  },
+  {
+    name: '风暴边界',
+    description: '双层磁墙横向巡弋并压缩安全角度，为守关主机做最终预演。',
+    targetScore: 30400,
+    targetCombo: 64,
+    clearBonus: 64,
+    ballSpeedMultiplier: 1.205,
+    movingRows: [1, 4],
+    motionAmplitude: 18,
+    layout: ['222111222', '211222112', '122111221', '212222212', '122111221', '211222112', '222111222'],
+  },
+  {
+    name: '磁暴主机',
+    description: '摧毁双侧攻击模块，穿透三层磁盾并终止主机的脉冲轰炸。',
+    targetScore: 42000,
+    targetCombo: 72,
+    clearBonus: 90,
+    ballSpeedMultiplier: 1.22,
+    top: 252,
+    layout: ['210111012', '122222221', '012101210', '001222100', '012000210', '001111100', '000000000'],
+    boss: {
+      kind: 'magnetron',
+      codename: 'MAGNETRON IX',
+      objective: '摧毁攻击模块并击破三阶段主机',
+      maxHp: 15,
+      phases: 3,
+      phaseSpeeds: [108, 148, 194],
+      attackModules: { count: 2, hp: 3, fireIntervals: [3.8, 2.8, 2.1] },
+      phaseLayouts: [
+        ['210111012', '122222221', '012101210', '001222100', '012000210', '001111100', '000000000'],
+        ['201020102', '121222121', '212101212', '012222210', '001212100', '010111010', '000000000'],
+        ['220101022', '112222211', '021212120', '102222201', '012111210', '001222100', '000000000'],
+      ],
+    },
+  },
+]
+
 function strengthenLayout(pattern, level) {
   return pattern.map((row, rowIndex) => [...row].map((cell, columnIndex) => {
     if (cell === '0') return '0'
@@ -93,30 +162,34 @@ function createLevel(level) {
   const isBoss = level % 5 === 0
   const chapterIndex = (level - 1) % 5
   const chapterOneConfig = level <= 5 ? FIRST_CHAPTER_LEVELS[level - 1] : null
+  const chapterTwoConfig = level >= 6 && level <= 10 ? SECOND_CHAPTER_LEVELS[level - 6] : null
+  const formalConfig = chapterOneConfig || chapterTwoConfig
   return {
     id: level,
-    name: chapterOneConfig?.name || LEVEL_NAMES[level - 1],
+    name: formalConfig?.name || LEVEL_NAMES[level - 1],
     chapterId: chapter.id,
     chapter: chapter.name,
     chapterCodename: chapter.codename,
     accent: chapter.accent,
-    description: chapterOneConfig?.description || (isBoss
+    description: formalConfig?.description || (isBoss
       ? `突破${chapter.name}的守关核心。Boss 机制将在对应章节版本中继续强化。`
       : `${chapter.description} 当前威胁等级 ${chapterIndex + 1}。`),
     isBoss,
-    targetScore: chapterOneConfig?.targetScore ?? 15000 + (level - 1) * 1800,
-    targetCombo: chapterOneConfig?.targetCombo ?? 35 + Math.floor((level - 1) * 1.5),
-    clearBonus: chapterOneConfig?.clearBonus ?? 20 + (level - 1) * 3 + (isBoss ? 15 : 0),
-    ballSpeedMultiplier: chapterOneConfig?.ballSpeedMultiplier ?? 1 + Math.min(0.22, (level - 1) * 0.012),
+    targetScore: formalConfig?.targetScore ?? 15000 + (level - 1) * 1800,
+    targetCombo: formalConfig?.targetCombo ?? 35 + Math.floor((level - 1) * 1.5),
+    clearBonus: formalConfig?.clearBonus ?? 20 + (level - 1) * 3 + (isBoss ? 15 : 0),
+    ballSpeedMultiplier: formalConfig?.ballSpeedMultiplier ?? 1 + Math.min(0.22, (level - 1) * 0.012),
     columns: 9,
     rows: 7,
     left: 34,
-    top: chapterOneConfig?.top ?? 178,
+    top: formalConfig?.top ?? 178,
     gapX: 6,
     gapY: 9,
     brickHeight: 28,
-    layout: chapterOneConfig?.layout || strengthenLayout(BASE_PATTERNS[(level - 1) % BASE_PATTERNS.length], level),
-    boss: chapterOneConfig?.boss || null,
+    movingRows: formalConfig?.movingRows || [],
+    motionAmplitude: formalConfig?.motionAmplitude || 0,
+    layout: formalConfig?.layout || strengthenLayout(BASE_PATTERNS[(level - 1) % BASE_PATTERNS.length], level),
+    boss: formalConfig?.boss || null,
   }
 }
 
@@ -126,3 +199,42 @@ export const LEVEL_ONE = LEVELS[0]
 export const getLevelConfig = (levelId) => LEVELS.find((level) => level.id === Number(levelId)) || LEVEL_ONE
 export const getChapter = (chapterId) => CHAPTERS.find((chapter) => chapter.id === Number(chapterId)) || CHAPTERS[0]
 export const getChapterLevels = (chapterId) => LEVELS.filter((level) => level.chapterId === Number(chapterId))
+
+export function getEndlessLevelConfig(wave = 1) {
+  const safeWave = Math.max(1, Math.floor(Number(wave) || 1))
+  const base = SECOND_CHAPTER_LEVELS[(safeWave - 1) % 4].layout
+  const layout = base.map((row, rowIndex) => [...row].map((cell, columnIndex) => {
+    const hp = Number(cell)
+    if (!hp) return '0'
+    if (safeWave >= 9 && (rowIndex * 5 + columnIndex * 3 + safeWave) % 4 === 0) return '3'
+    if (safeWave >= 4 && hp === 1 && (rowIndex + columnIndex + safeWave) % 3 === 0) return '2'
+    return String(hp)
+  }).join(''))
+  return {
+    id: 0,
+    name: '无尽磁域',
+    chapterId: 2,
+    chapter: '磁暴街区',
+    chapterCodename: 'ENDLESS MAGNETIC FIELD',
+    accent: '#55a7ff',
+    description: `第 ${safeWave} 波磁域正在重构，生命、分数和模块效果会跨波保留。`,
+    isBoss: false,
+    endless: true,
+    wave: safeWave,
+    targetScore: 0,
+    targetCombo: 0,
+    clearBonus: 0,
+    ballSpeedMultiplier: Math.min(1.46, 1.1 + (safeWave - 1) * 0.025),
+    columns: 9,
+    rows: 7,
+    left: 34,
+    top: 178,
+    gapX: 6,
+    gapY: 9,
+    brickHeight: 28,
+    movingRows: safeWave >= 3 ? [safeWave % 6, (safeWave + 3) % 7] : [],
+    motionAmplitude: Math.min(19, 10 + safeWave),
+    layout,
+    boss: null,
+  }
+}

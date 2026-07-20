@@ -62,7 +62,8 @@
 .deploy-button { min-height: 44px; margin-top: auto; border: 0; border-radius: 10px; color: #061412; background: linear-gradient(100deg, var(--chapter-accent), #d9fff8); font-size: 11px; font-weight: 900; box-shadow: 0 10px 24px color-mix(in srgb, var(--chapter-accent), transparent 84%); }
 .deploy-button:disabled { color: #658083; background: #173038; box-shadow: none; cursor: not-allowed; }
 
-.reward-track { display: grid; grid-template-columns: 135px repeat(8, 1fr); gap: 6px; margin-top: 14px; padding: 10px; border: 1px solid #18343d; border-radius: 12px; background: rgba(6, 17, 26, .68); }
+.hub-lower-grid { display: grid; grid-template-columns: minmax(0, 1fr) 270px; gap: 8px; margin-top: 14px; }
+.reward-track { display: grid; grid-template-columns: 125px repeat(8, 1fr); gap: 6px; min-width: 0; padding: 10px; border: 1px solid #18343d; border-radius: 12px; background: rgba(6, 17, 26, .68); }
 .reward-track-title { display: flex; flex-direction: column; justify-content: center; padding-left: 6px; }
 .reward-track-title span { color: #55f4dd; font-size: 7px; font-weight: 900; letter-spacing: .12em; }
 .reward-track-title strong { margin-top: 5px; color: #b9d0cd; font-size: 10px; }
@@ -71,6 +72,14 @@
 .reward-track button small { font-size: 6px; }
 .reward-track button.reached { border-color: rgba(255, 209, 102, .42); color: #ffd166; background: rgba(255, 209, 102, .05); }
 .reward-track button.claimed { opacity: .5; }
+.endless-dock { min-width: 0; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; padding: 10px 11px; border: 1px solid rgba(85, 167, 255, .35); border-radius: 12px; background: linear-gradient(140deg, rgba(85, 167, 255, .1), rgba(112, 77, 255, .045)); }
+.endless-dock > div { min-width: 0; display: grid; gap: 3px; }
+.endless-dock span { color: #55a7ff; font-size: 6px; font-weight: 900; letter-spacing: .14em; }
+.endless-dock strong { overflow: hidden; color: #eaf6ff; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.endless-dock small { overflow: hidden; color: #69869d; font: 700 6px ui-monospace, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.endless-dock > button { min-width: 72px; min-height: 42px; border: 1px solid rgba(85, 167, 255, .5); border-radius: 9px; color: #07131f; background: linear-gradient(110deg, #55a7ff, #9bd0ff); font-size: 8px; font-weight: 900; }
+.endless-dock.locked { opacity: .55; filter: saturate(.5); }
+.endless-dock > button:disabled { color: #6d7e8d; background: #172c3a; cursor: not-allowed; }
 .hub-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .hub-actions button, .lab-back { min-height: 36px; padding: 0 16px; border: 1px solid #294851; border-radius: 9px; color: #91aaaa; background: transparent; font-size: 9px; font-weight: 800; }
 
@@ -108,6 +117,7 @@
   .mission-detail { min-height: 260px; }
   .upgrade-grid { grid-template-columns: repeat(3, 1fr); }
   .reward-track { grid-template-columns: 110px repeat(4, 1fr); }
+  .hub-lower-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-height: 840px) and (min-width: 721px) {
@@ -127,7 +137,8 @@
   .mission-detail dl div { padding: 4px 0; }
   .detail-stars { margin-top: 6px; }
   .deploy-button { min-height: 38px; margin-top: 7px; }
-  .reward-track { margin-top: 8px; padding-top: 7px; padding-bottom: 7px; }
+  .hub-lower-grid { margin-top: 8px; }
+  .reward-track { padding-top: 7px; padding-bottom: 7px; }
   .reward-track button { min-height: 45px; }
   .hub-actions { margin-top: 7px; }
   .hub-actions button, .lab-back { min-height: 32px; }
@@ -172,6 +183,9 @@
   .campaign-hub .reward-track { margin-top: 8px; }
   .reward-track-title { display: none; }
   .reward-track button { scroll-snap-align: start; }
+  .hub-lower-grid { margin-top: 8px; }
+  .endless-dock { min-height: 54px; padding: 7px 9px; }
+  .endless-dock > button { min-height: 38px; }
   .hub-actions { justify-content: stretch; }
   .campaign-hub .hub-actions { margin-top: 8px; }
   .hub-actions button { flex: 1; padding: 0 8px; }
@@ -205,7 +219,9 @@
   .mission-detail dl div { padding: 3px 0; }
   .detail-stars { margin-top: 4px; }
   .deploy-button { min-height: 38px; margin-top: 5px; }
-  .campaign-hub .reward-track { margin-top: 5px; padding-top: 6px; padding-bottom: 6px; }
+  .campaign-hub .hub-lower-grid { margin-top: 5px; }
+  .campaign-hub .reward-track { padding-top: 6px; padding-bottom: 6px; }
   .reward-track button { min-height: 42px; }
+  .endless-dock { min-height: 48px; padding-top: 5px; padding-bottom: 5px; }
   .campaign-hub .hub-actions { margin-top: 5px; }
 }

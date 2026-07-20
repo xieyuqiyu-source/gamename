@@ -4,7 +4,7 @@ import { CHAPTERS, getChapterLevels, getLevelConfig } from '../config/levels'
 import { STAR_REWARDS } from '../config/progressionConfig'
 import { useGameStore } from '../stores/game'
 
-const emit = defineEmits(['play', 'upgrades', 'title'])
+const emit = defineEmits(['play', 'endless', 'upgrades', 'title'])
 const store = useGameStore()
 const previewLevelId = ref(store.selectedLevel)
 
@@ -93,7 +93,7 @@ function playSelected() {
         <div v-if="selectedLevel.boss" class="boss-preview">
           <span>BOSS PROTOCOL</span>
           <strong>{{ selectedLevel.boss.codename }}</strong>
-          <small>{{ selectedLevel.boss.phases }} 阶段 · {{ selectedLevel.boss.maxHp }} 核心耐久 · 移动护盾</small>
+          <small>{{ selectedLevel.boss.phases }} 阶段 · {{ selectedLevel.boss.maxHp }} 核心耐久 · {{ selectedLevel.boss.attackModules ? `${selectedLevel.boss.attackModules.count} 座攻击模块` : '移动护盾' }}</small>
         </div>
         <dl>
           <div><dt>目标分数</dt><dd>{{ selectedLevel.targetScore }}</dd></div>
@@ -111,27 +111,40 @@ function playSelected() {
       </aside>
     </div>
 
-    <section class="reward-track">
-      <div class="reward-track-title">
-        <span>STAR REWARD PROTOCOL</span>
-        <strong>累计星级奖励</strong>
-      </div>
-      <button
-        v-for="reward in STAR_REWARDS"
-        :key="reward.id"
-        type="button"
-        :class="{
-          reached: store.totalStars >= reward.stars,
-          claimed: store.claimedStarRewards.includes(reward.id),
-        }"
-        :disabled="store.totalStars < reward.stars || store.claimedStarRewards.includes(reward.id)"
-        @click="store.claimStarReward(reward.id)"
-      >
-        <span>{{ reward.stars }} ★</span>
-        <strong>◈ {{ reward.coins }}</strong>
-        <small>{{ store.claimedStarRewards.includes(reward.id) ? '已领取' : store.totalStars >= reward.stars ? '点击领取' : '未达成' }}</small>
-      </button>
-    </section>
+    <div class="hub-lower-grid">
+      <section class="reward-track">
+        <div class="reward-track-title">
+          <span>STAR REWARD PROTOCOL</span>
+          <strong>累计星级奖励</strong>
+        </div>
+        <button
+          v-for="reward in STAR_REWARDS"
+          :key="reward.id"
+          type="button"
+          :class="{
+            reached: store.totalStars >= reward.stars,
+            claimed: store.claimedStarRewards.includes(reward.id),
+          }"
+          :disabled="store.totalStars < reward.stars || store.claimedStarRewards.includes(reward.id)"
+          @click="store.claimStarReward(reward.id)"
+        >
+          <span>{{ reward.stars }} ★</span>
+          <strong>◈ {{ reward.coins }}</strong>
+          <small>{{ store.claimedStarRewards.includes(reward.id) ? '已领取' : store.totalStars >= reward.stars ? '点击领取' : '未达成' }}</small>
+        </button>
+      </section>
+
+      <section class="endless-dock" :class="{ locked: !store.endless.unlocked }">
+        <div>
+          <span>ENDLESS FIELD</span>
+          <strong>{{ store.endless.unlocked ? '无尽磁域已连接' : '通关第 10 关后解锁' }}</strong>
+          <small>BEST {{ store.endless.highScore }} · W{{ store.endless.highestWave }} · {{ store.endless.bestCombo }} COMBO</small>
+        </div>
+        <button type="button" :disabled="!store.endless.unlocked" data-testid="deploy-endless" @click="emit('endless')">
+          {{ store.endless.unlocked ? '进入无尽' : 'LOCK' }}
+        </button>
+      </section>
+    </div>
 
     <footer class="hub-actions">
       <button type="button" @click="emit('title')">返回标题</button>

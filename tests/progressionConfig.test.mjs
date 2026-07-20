@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { CHAPTERS, LEVELS } from '../src/config/levels.js'
+import { CHAPTERS, getEndlessLevelConfig, LEVELS } from '../src/config/levels.js'
 import { getRunModifiers, getUpgradeRefund, UPGRADE_DEFINITIONS } from '../src/config/progressionConfig.js'
 
 test('20 关按四章完整建模且每关都有可玩砖阵', () => {
@@ -22,6 +22,31 @@ test('第一章五关使用正式独立布局且第五关配置三阶段 Boss', 
   assert.equal(firstChapter[4].boss.phases, 3)
   assert.equal(firstChapter[4].boss.phaseLayouts.length, 3)
   assert.equal(firstChapter[4].boss.phaseSpeeds.length, 3)
+})
+
+test('第二章五关使用正式独立布局且磁暴主机配置攻击模块', () => {
+  const secondChapter = LEVELS.slice(5, 10)
+  assert.equal(new Set(secondChapter.map((level) => level.layout.join('|'))).size, 5)
+  assert.deepEqual(secondChapter.map((level) => level.ballSpeedMultiplier), [1.125, 1.15, 1.175, 1.205, 1.22])
+  const boss = secondChapter[4].boss
+  assert.deepEqual(secondChapter.slice(1, 4).map((level) => level.movingRows.length), [2, 3, 2])
+  assert.equal(boss.codename, 'MAGNETRON IX')
+  assert.equal(boss.kind, 'magnetron')
+  assert.equal(boss.maxHp, 15)
+  assert.deepEqual(boss.attackModules, { count: 2, hp: 3, fireIntervals: [3.8, 2.8, 2.1] })
+})
+
+test('无尽波次会确定性轮换砖阵并逐步增加耐久与球速', () => {
+  const wave1 = getEndlessLevelConfig(1)
+  const wave4 = getEndlessLevelConfig(4)
+  const wave9 = getEndlessLevelConfig(9)
+  assert.equal(wave1.endless, true)
+  assert.equal(wave1.wave, 1)
+  assert.notEqual(wave1.layout.join('|'), wave4.layout.join('|'))
+  assert.ok(wave4.ballSpeedMultiplier > wave1.ballSpeedMultiplier)
+  assert.ok(wave9.layout.join('').includes('3'))
+  assert.ok(wave9.ballSpeedMultiplier > wave4.ballSpeedMultiplier)
+  assert.ok(wave9.movingRows.length > 0)
 })
 
 test('升级退款等于全部已购等级成本之和', () => {

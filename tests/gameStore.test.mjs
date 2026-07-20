@@ -83,3 +83,49 @@ test('开发预览胜利不会写入正式存档或解锁关卡', () => {
   assert.equal(store.campaign.highestUnlockedLevel, 1)
   assert.equal(store.campaign.levelRecords[5], undefined)
 })
+
+test('无尽失败结算持久化纪录且不写入主线关卡记录', () => {
+  const store = createStore(40)
+  store.endless.unlocked = true
+  store.syncFromEngine({
+    mode: 'lost', runType: 'endless', runId: 7, level: 0, levelName: '无尽磁域',
+    wave: 6, wavesCleared: 5,
+    lives: 0, maxLives: 3, shieldCharges: 0,
+    score: 36000, bestScore: 36000, coins: 88,
+    runCoinsEarned: 48, clearBonus: 0, stars: 0,
+    starBreakdown: { clear: false, survivor: false, mastery: false },
+    combo: 0, maxCombo: 57, ballCount: 0, dropCount: 0,
+    activeEffects: [], bricksRemaining: 22, totalBricks: 44,
+    message: '无尽结束', resumeCountdown: 0,
+    levelMeta: { chapter: '磁暴街区', accent: '#55a7ff', isBoss: false, targetScore: 0, targetCombo: 0 },
+    boss: null, hazardCount: 0, runModifiers: {},
+  })
+
+  assert.deepEqual(store.endless, { unlocked: true, highScore: 36000, highestWave: 6, bestCombo: 57 })
+  assert.equal(store.currency.coins, 88)
+  assert.equal(store.campaign.levelRecords[0], undefined)
+  assert.equal(store.lastSettledRunId, 7)
+})
+
+test('无尽开发预览失败不会解锁模式或改写正式存档', () => {
+  const store = createStore(151)
+  store.persistSave()
+  const before = window.localStorage.getItem('gamename:save')
+  store.syncFromEngine({
+    mode: 'lost', runType: 'endless', runId: 8, level: 0, levelName: '无尽磁域',
+    wave: 12, wavesCleared: 11,
+    lives: 0, maxLives: 3, shieldCharges: 0,
+    score: 99000, bestScore: 99000, coins: 999,
+    runCoinsEarned: 848, clearBonus: 0, stars: 0,
+    starBreakdown: { clear: false, survivor: false, mastery: false },
+    combo: 0, maxCombo: 120, ballCount: 0, dropCount: 0,
+    activeEffects: [], bricksRemaining: 30, totalBricks: 50,
+    message: '预览结束', resumeCountdown: 0,
+    levelMeta: { chapter: '磁暴街区', accent: '#55a7ff', isBoss: false, targetScore: 0, targetCombo: 0 },
+    boss: null, hazardCount: 0, runModifiers: {},
+  }, { settle: false })
+
+  assert.equal(window.localStorage.getItem('gamename:save'), before)
+  assert.deepEqual(store.endless, { unlocked: false, highScore: 0, highestWave: 0, bestCombo: 0 })
+  assert.equal(store.currency.coins, 151)
+})

@@ -204,7 +204,10 @@ export function recordRunSettlement(currentSave, result, now = Date.now()) {
     bestLives: won ? Math.max(previous.bestLives, nonNegativeInt(result.lives)) : previous.bestLives,
     lastPlayedAt: now,
   }
-  if (won) save.campaign.highestUnlockedLevel = Math.max(save.campaign.highestUnlockedLevel, Math.min(20, level + 1))
+  if (won) {
+    save.campaign.highestUnlockedLevel = Math.max(save.campaign.highestUnlockedLevel, Math.min(20, level + 1))
+    if (level >= 10) save.endless.unlocked = true
+  }
   save.campaign.lastResult = {
     runId: nonNegativeInt(result.runId),
     level,
@@ -216,6 +219,19 @@ export function recordRunSettlement(currentSave, result, now = Date.now()) {
     bestCombo: nonNegativeInt(result.maxCombo),
     lives: nonNegativeInt(result.lives),
     settledAt: now,
+  }
+  save.profile.updatedAt = now
+  return save
+}
+
+export function recordEndlessSettlement(currentSave, result, now = Date.now()) {
+  const save = normalizeSave(clone(currentSave), now)
+  save.currency.coins = nonNegativeInt(result.coins)
+  save.endless = {
+    unlocked: save.endless.unlocked,
+    highScore: Math.max(save.endless.highScore, nonNegativeInt(result.score)),
+    highestWave: Math.max(save.endless.highestWave, nonNegativeInt(result.wave, 1)),
+    bestCombo: Math.max(save.endless.bestCombo, nonNegativeInt(result.maxCombo)),
   }
   save.profile.updatedAt = now
   return save

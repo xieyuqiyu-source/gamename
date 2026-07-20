@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import CampaignHub from './components/CampaignHub.vue'
 import UpgradeLab from './components/UpgradeLab.vue'
 import { MODE_LABELS } from './config/gameConfig'
-import { getChapterLevels, getLevelConfig, LEVELS } from './config/levels'
+import { getChapterLevels, getEndlessLevelConfig, getLevelConfig, LEVELS } from './config/levels'
 import { getRunModifiers, getUpgradeCost, UPGRADE_DEFINITIONS } from './config/progressionConfig'
 import { GameEngine } from './engine/GameEngine'
 import { useGameStore } from './stores/game'
@@ -18,10 +18,13 @@ const previewMode = ref(false)
 const starSlots = [1, 2, 3]
 
 const modeLabel = computed(() => MODE_LABELS[store.mode] || store.mode)
-const record = computed(() => store.currentRecord)
+const isEndless = computed(() => store.runType === 'endless')
+const record = computed(() => isEndless.value
+  ? { stars: 0, highScore: store.endless.highScore, bestCombo: store.endless.bestCombo, attempts: 0, clears: 0, bestLives: 0 }
+  : store.currentRecord)
 const isSettlement = computed(() => ['won', 'lost'].includes(store.mode))
 const showReturnButton = computed(() => ['briefing', 'won', 'lost'].includes(store.mode))
-const currentLevel = computed(() => getLevelConfig(store.level))
+const currentLevel = computed(() => isEndless.value ? getEndlessLevelConfig(store.wave || 1) : getLevelConfig(store.level))
 const bossActive = computed(() => store.screen === 'game' && store.mode !== 'menu' ? store.boss : null)
 const canNavigate = computed(() => !['ready', 'playing', 'paused', 'countdown'].includes(store.mode))
 const saveStatusLabel = computed(() => {
@@ -62,11 +65,13 @@ function pauseAction() {
 
 function returnToCampaign() {
   resetArmed.value = false
+  const selected = getLevelConfig(store.selectedLevel)
+  const selectedRecord = store.campaign.levelRecords[String(selected.id)] || { highScore: 0 }
   engineRef.value?.loadProfile({
     coins: store.currency.coins,
-    bestScore: record.value.highScore,
+    bestScore: selectedRecord.highScore,
     modifiers: getRunModifiers(store.upgrades),
-    levelConfig: currentLevel.value,
+    levelConfig: selected,
   })
   store.showCampaign()
 }
@@ -112,6 +117,18 @@ function playLevel(level) {
   store.screen = 'game'
 }
 
+function playEndless() {
+  if (!store.endless.unlocked) return
+  previewMode.value = false
+  engineRef.value?.configureEndless({
+    wave: 1,
+    coins: store.currency.coins,
+    bestScore: store.endless.highScore,
+    modifiers: getRunModifiers(store.upgrades),
+  })
+  store.screen = 'game'
+}
+
 function resetProgress() {
   if (!resetArmed.value) {
     resetArmed.value = true
@@ -145,6 +162,7 @@ function createTextState(engine) {
       stars: store.campaign.levelRecords[String(level.id)]?.stars || 0,
     })),
     availableStarRewards: store.availableStarRewards.map((reward) => reward.id),
+    endless: { ...store.endless },
   } : store.screen === 'upgrades' ? {
     coins: store.currency.coins,
     refund: store.upgradeRefund,
@@ -216,6 +234,12 @@ onMounted(() => {
         store.screen = 'game'
         return true
       },
+      previewEndless: (wave = 1) => {
+        previewMode.value = true
+        engine.configureEndless({ wave, coins: store.currency.coins, bestScore: store.endless.highScore, modifiers: getRunModifiers(store.upgrades) })
+        store.screen = 'game'
+        return true
+      },
       purchase: (key) => store.purchaseUpgrade(key),
       resetUpgrades: () => store.resetUpgrades(),
       claimReward: (id) => store.claimStarReward(id),
@@ -263,6 +287,16 @@ onMounted(() => {
         }
       }
     }
+    if (previewParams.get('endless') === '1') {
+      previewMode.value = true
+      const previewWave = Math.max(1, Number(previewParams.get('wave')) || 1)
+      engine.configureEndless({ wave: previewWave, coins: store.currency.coins, bestScore: store.endless.highScore, modifiers: getRunModifiers(store.upgrades) })
+      store.screen = 'game'
+      if (previewParams.get('autostart') === '1') {
+        engine.startNewGame()
+        if (previewParams.get('ready') !== '1') engine.launch()
+      }
+    }
   }
 })
 
@@ -283,7 +317,7 @@ onBeforeUnmount(() => {
       <div class="brand-lockup">
         <span class="brand-mark" aria-hidden="true"></span>
         <div>
-          <p>NEON ARCADE / BUILD 0.6</p>
+          <p>NEON ARCADE / BUILD 0.7</p>
           <h1>NEON BREAKER</h1>
         </div>
       </div>
@@ -295,7 +329,7 @@ onBeforeUnmount(() => {
         </nav>
         <div class="build-status">
           <span class="live-dot"></span>
-          第一章作战内容
+          第二章与无尽磁域
         </div>
       </div>
     </header>
@@ -303,6 +337,7 @@ onBeforeUnmount(() => {
     <CampaignHub
       v-if="store.screen === 'campaign'"
       @play="playLevel"
+      @endless="playEndless"
       @upgrades="openUpgrades"
       @title="showTitle"
     />
@@ -314,25 +349,29 @@ onBeforeUnmount(() => {
 
     <section v-show="['title', 'game'].includes(store.screen)" class="game-layout">
       <aside class="side-panel mission-panel">
-        <p class="panel-kicker">MISSION {{ String(currentLevel.id).padStart(2, '0') }}</p>
+        <p class="panel-kicker">{{ isEndless ? `ENDLESS / WAVE ${String(store.wave).padStart(2, '0')}` : `MISSION ${String(currentLevel.id).padStart(2, '0')}` }}</p>
         <h2>{{ currentLevel.name }}</h2>
-        <p class="chapter-name">CHAPTER {{ String(currentLevel.chapterId).padStart(2, '0') }} / {{ currentLevel.chapter }}</p>
+        <p class="chapter-name">{{ isEndless ? 'MAGNETIC SURVIVAL PROTOCOL' : `CHAPTER ${String(currentLevel.chapterId).padStart(2, '0')} / ${currentLevel.chapter}` }}</p>
 
-        <div class="record-stars" :aria-label="`历史最高 ${record.stars} 星`">
+        <div v-if="!isEndless" class="record-stars" :aria-label="`历史最高 ${record.stars} 星`">
           <i v-for="star in starSlots" :key="star" :class="{ active: star <= record.stars }">★</i>
           <span>历史评价</span>
+        </div>
+        <div v-else class="endless-wave-card">
+          <span>当前波次</span><strong>{{ String(store.wave).padStart(2, '0') }}</strong><small>历史最高 W{{ store.endless.highestWave }}</small>
         </div>
 
         <dl class="stats-list compact-stats">
           <div><dt>当前得分</dt><dd>{{ String(store.score).padStart(6, '0') }}</dd></div>
           <div><dt>历史最高</dt><dd>{{ String(record.highScore).padStart(6, '0') }}</dd></div>
           <div><dt>最佳连击</dt><dd>{{ record.bestCombo }} COMBO</dd></div>
-          <div><dt>挑战 / 通关</dt><dd>{{ record.attempts }} / {{ record.clears }}</dd></div>
+          <div v-if="!isEndless"><dt>挑战 / 通关</dt><dd>{{ record.attempts }} / {{ record.clears }}</dd></div>
+          <div v-else><dt>已清波次</dt><dd>{{ store.wavesCleared }} WAVE</dd></div>
           <div><dt>晶币库存</dt><dd class="coin-value">◈ {{ store.coins }}</dd></div>
         </dl>
 
         <div class="progress-block">
-          <div><span>{{ bossActive ? '当前护盾' : '清除进度' }}</span><strong>{{ store.progressPercent }}%</strong></div>
+          <div><span>{{ bossActive ? '当前护盾' : isEndless ? `WAVE ${store.wave} 进度` : '清除进度' }}</span><strong>{{ store.progressPercent }}%</strong></div>
           <div class="progress-track"><span :style="{ width: `${store.progressPercent}%` }"></span></div>
         </div>
 
@@ -372,23 +411,32 @@ onBeforeUnmount(() => {
         </div>
 
         <div v-if="store.mode === 'briefing'" class="briefing-panel">
-          <p>三星任务</p>
-          <div><i>Ⅰ</i><span>{{ currentLevel.isBoss ? '击破三阶段棱镜核心' : '清除全部砖块' }}</span></div>
-          <div><i>Ⅱ</i><span>至少剩余 2 条生命</span></div>
-          <div><i>Ⅲ</i><span>{{ currentLevel.targetScore }} 分或 {{ currentLevel.targetCombo }} 连击</span></div>
-          <small>清关奖励 ◈ {{ currentLevel.clearBonus }}</small>
+          <p>{{ isEndless ? '无尽协议' : '三星任务' }}</p>
+          <template v-if="isEndless">
+            <div><i>∞</i><span>清空砖阵后连续进入下一波</span></div>
+            <div><i>↗</i><span>球速与强化砖密度逐波提升</span></div>
+            <div><i>◆</i><span>失败后保存分数、波次与连击</span></div>
+            <small>生命、得分和模块效果跨波保留</small>
+          </template>
+          <template v-else>
+            <div><i>Ⅰ</i><span>{{ currentLevel.isBoss ? (currentLevel.boss?.objective || '击破三阶段棱镜核心') : '清除全部砖块' }}</span></div>
+            <div><i>Ⅱ</i><span>至少剩余 2 条生命</span></div>
+            <div><i>Ⅲ</i><span>{{ currentLevel.targetScore }} 分或 {{ currentLevel.targetCombo }} 连击</span></div>
+            <small>清关奖励 ◈ {{ currentLevel.clearBonus }}</small>
+          </template>
           <strong v-if="currentLevel.boss" class="boss-briefing">{{ currentLevel.boss.codename }} · {{ currentLevel.boss.phases }} PHASES · {{ currentLevel.boss.maxHp }} CORE</strong>
         </div>
 
         <div v-else-if="isSettlement" class="result-panel" :class="store.mode">
-          <div class="result-stars">
+          <div v-if="!isEndless" class="result-stars">
             <i v-for="star in starSlots" :key="star" :class="{ active: star <= store.stars }">★</i>
           </div>
-          <strong>{{ store.mode === 'won' ? `${store.stars} 星完成` : '挑战未完成' }}</strong>
+          <strong>{{ isEndless ? `抵达 WAVE ${store.wave}` : store.mode === 'won' ? `${store.stars} 星完成` : '挑战未完成' }}</strong>
           <dl>
             <div><dt>最终得分</dt><dd>{{ store.score }}</dd></div>
             <div><dt>最高连击</dt><dd>{{ store.maxCombo }}</dd></div>
             <div><dt>本局晶币</dt><dd>+{{ store.runCoinsEarned }}</dd></div>
+            <div v-if="isEndless"><dt>已清波次</dt><dd>{{ store.wavesCleared }}</dd></div>
           </dl>
           <small>{{ saveStatusLabel }}</small>
         </div>
@@ -399,6 +447,7 @@ onBeforeUnmount(() => {
             <div><b>{{ bossActive.codename }}</b><small>{{ bossActive.shieldActive ? `护盾节点 ${bossActive.shieldNodes}` : '核心暴露' }}</small></div>
             <p><i :style="{ width: `${bossActive.hp / bossActive.maxHp * 100}%` }"></i></p>
             <footer><span>CORE {{ bossActive.hp }} / {{ bossActive.maxHp }}</span><strong>{{ bossActive.shieldActive ? 'SHIELDED' : 'ATTACK' }}</strong></footer>
+            <div v-if="bossActive.modules?.length" class="boss-module-line"><span>ATTACK MODULES</span><strong>{{ bossActive.modulesAlive }} / {{ bossActive.modules.length }}</strong><small>{{ store.hazardCount }} PULSE</small></div>
           </div>
 
           <div class="effect-rack">
@@ -440,11 +489,12 @@ onBeforeUnmount(() => {
     <section v-show="['title', 'game'].includes(store.screen)" class="mobile-command-bar">
       <div>
         <span>♥ {{ store.lives }}</span>
-        <strong>{{ bossActive ? `BOSS P${bossActive.phase} · ${bossActive.shieldActive ? `盾 ${bossActive.shieldNodes}` : `核 ${bossActive.hp}`}` : store.combo ? `${store.combo} 连击` : modeLabel }}</strong>
+        <strong>{{ bossActive ? `BOSS P${bossActive.phase} · ${bossActive.modules?.length ? `模块 ${bossActive.modulesAlive}` : bossActive.shieldActive ? `盾 ${bossActive.shieldNodes}` : `核 ${bossActive.hp}`}` : isEndless ? `WAVE ${store.wave} · ${store.bricksRemaining} BRICK` : store.combo ? `${store.combo} 连击` : modeLabel }}</strong>
         <span>◈ {{ store.coins }}</span>
       </div>
       <div v-if="isSettlement" class="mobile-result">
-        <span><i v-for="star in starSlots" :key="star" :class="{ active: star <= store.stars }">★</i></span>
+        <span v-if="!isEndless"><i v-for="star in starSlots" :key="star" :class="{ active: star <= store.stars }">★</i></span>
+        <span v-else>BEST W{{ store.endless.highestWave }}</span>
         <strong>+{{ store.runCoinsEarned }} ◈</strong>
       </div>
       <div v-if="store.activeEffects.length" class="mobile-effects">
@@ -463,8 +513,8 @@ onBeforeUnmount(() => {
 
     <footer v-show="['title', 'game'].includes(store.screen)" class="game-footer">
       <span>CAMPAIGN &amp; PROGRESSION</span>
-      <p>第一章 5 关 · 三阶段棱镜核心 · 永久强化 · 双端战斗</p>
-      <strong>v0.6.0</strong>
+      <p>第二章 5 关 · 磁暴攻击模块 · 无尽波次 · 双端战斗</p>
+      <strong>v0.7.0</strong>
     </footer>
   </main>
 </template>
