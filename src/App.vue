@@ -260,7 +260,7 @@ onMounted(() => {
       if (previewParams.get('autostart') === '1') {
         engine.startNewGame()
         if (previewParams.get('ready') !== '1') engine.launch()
-        const previewPhase = Math.min(3, Math.max(1, Number(previewParams.get('phase')) || 1))
+        const previewPhase = Math.min(previewLevel.boss?.phases || 1, Math.max(1, Number(previewParams.get('phase')) || 1))
         if (previewLevel.boss && previewPhase > 1) {
           engine.startBossPhase(previewPhase)
           engine.state.boss.hp = previewLevel.boss.maxHp - (previewPhase - 1) * (previewLevel.boss.maxHp / previewLevel.boss.phases)
@@ -317,7 +317,7 @@ onBeforeUnmount(() => {
       <div class="brand-lockup">
         <span class="brand-mark" aria-hidden="true"></span>
         <div>
-          <p>NEON ARCADE / BUILD 0.7</p>
+          <p>NEON ARCADE / BUILD 0.8</p>
           <h1>NEON BREAKER</h1>
         </div>
       </div>
@@ -329,7 +329,7 @@ onBeforeUnmount(() => {
         </nav>
         <div class="build-status">
           <span class="live-dot"></span>
-          第二章与无尽磁域
+          全章节与终极奇点
         </div>
       </div>
     </header>
@@ -447,7 +447,11 @@ onBeforeUnmount(() => {
             <div><b>{{ bossActive.codename }}</b><small>{{ bossActive.shieldActive ? `护盾节点 ${bossActive.shieldNodes}` : '核心暴露' }}</small></div>
             <p><i :style="{ width: `${bossActive.hp / bossActive.maxHp * 100}%` }"></i></p>
             <footer><span>CORE {{ bossActive.hp }} / {{ bossActive.maxHp }}</span><strong>{{ bossActive.shieldActive ? 'SHIELDED' : 'ATTACK' }}</strong></footer>
-            <div v-if="bossActive.modules?.length" class="boss-module-line"><span>ATTACK MODULES</span><strong>{{ bossActive.modulesAlive }} / {{ bossActive.modules.length }}</strong><small>{{ store.hazardCount }} PULSE</small></div>
+            <div v-if="bossActive.modules?.length || bossActive.barrage" class="boss-module-line">
+              <span>{{ bossActive.modules?.length ? 'ATTACK MODULES' : 'BARRAGE SIGNAL' }}</span>
+              <strong>{{ bossActive.modules?.length ? `${bossActive.modulesAlive} / ${bossActive.modules.length}` : 'ACTIVE' }}</strong>
+              <small>{{ store.hazardCount }} THREAT</small>
+            </div>
           </div>
 
           <div class="effect-rack">
@@ -489,7 +493,7 @@ onBeforeUnmount(() => {
     <section v-show="['title', 'game'].includes(store.screen)" class="mobile-command-bar">
       <div>
         <span>♥ {{ store.lives }}</span>
-        <strong>{{ bossActive ? `BOSS P${bossActive.phase} · ${bossActive.modules?.length ? `模块 ${bossActive.modulesAlive}` : bossActive.shieldActive ? `盾 ${bossActive.shieldNodes}` : `核 ${bossActive.hp}`}` : isEndless ? `WAVE ${store.wave} · ${store.bricksRemaining} BRICK` : store.combo ? `${store.combo} 连击` : modeLabel }}</strong>
+        <strong>{{ bossActive ? `BOSS P${bossActive.phase} · ${bossActive.modules?.length ? `模块 ${bossActive.modulesAlive}` : bossActive.barrage && !bossActive.shieldActive ? `弹幕 ${store.hazardCount}` : bossActive.shieldActive ? `盾 ${bossActive.shieldNodes}` : `核 ${bossActive.hp}`}` : isEndless ? `WAVE ${store.wave} · ${store.bricksRemaining} BRICK` : store.combo ? `${store.combo} 连击` : modeLabel }}</strong>
         <span>◈ {{ store.coins }}</span>
       </div>
       <div v-if="isSettlement" class="mobile-result">
@@ -513,8 +517,8 @@ onBeforeUnmount(() => {
 
     <footer v-show="['title', 'game'].includes(store.screen)" class="game-footer">
       <span>CAMPAIGN &amp; PROGRESSION</span>
-      <p>第二章 5 关 · 磁暴攻击模块 · 无尽波次 · 双端战斗</p>
-      <strong>v0.7.0</strong>
+      <p>20 关全章节 · 四大核心 · 组合弹幕 · 双端战斗</p>
+      <strong>v0.8.0</strong>
     </footer>
   </main>
 </template>

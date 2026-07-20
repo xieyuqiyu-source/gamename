@@ -26,6 +26,14 @@ function chooseLevel(level) {
 function playSelected() {
   if (selectedUnlocked.value && store.selectLevel(selectedLevel.value.id)) emit('play', selectedLevel.value)
 }
+
+function bossFeatureLabel(boss) {
+  const features = []
+  if (boss.attackModules) features.push(`${boss.attackModules.count} 座攻击模块`)
+  if (boss.barrage) features.push(`${Math.max(...boss.barrage.counts)} 重弹幕`)
+  if (!features.length) features.push('移动护盾')
+  return features.join(' · ')
+}
 </script>
 
 <template>
@@ -93,7 +101,7 @@ function playSelected() {
         <div v-if="selectedLevel.boss" class="boss-preview">
           <span>BOSS PROTOCOL</span>
           <strong>{{ selectedLevel.boss.codename }}</strong>
-          <small>{{ selectedLevel.boss.phases }} 阶段 · {{ selectedLevel.boss.maxHp }} 核心耐久 · {{ selectedLevel.boss.attackModules ? `${selectedLevel.boss.attackModules.count} 座攻击模块` : '移动护盾' }}</small>
+          <small>{{ selectedLevel.boss.phases }} 阶段 · {{ selectedLevel.boss.maxHp }} 核心耐久 · {{ bossFeatureLabel(selectedLevel.boss) }}</small>
         </div>
         <dl>
           <div><dt>目标分数</dt><dd>{{ selectedLevel.targetScore }}</dd></div>

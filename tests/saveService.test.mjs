@@ -122,6 +122,22 @@ test('第二章通关后解锁无尽模式', () => {
   assert.equal(save.endless.unlocked, true)
 })
 
+test('完整二十关顺序通关后保留全部记录且解锁上限稳定在第二十关', () => {
+  let save = createDefaultSave(1000)
+  for (let level = 1; level <= 20; level += 1) {
+    save = recordRunSettlement(save, {
+      mode: 'won', runId: level, level, score: 20000 + level * 1000,
+      maxCombo: 30 + level * 4, lives: 2, stars: 3,
+      coins: level * 50, runCoinsEarned: 50,
+    }, 7000 + level)
+  }
+  assert.equal(save.campaign.highestUnlockedLevel, 20)
+  assert.equal(Object.keys(save.campaign.levelRecords).length, 20)
+  assert.equal(save.campaign.levelRecords[20].clears, 1)
+  assert.equal(save.campaign.levelRecords[20].stars, 3)
+  assert.equal(save.endless.unlocked, true)
+})
+
 test('无尽结算保存最高分、最高波次和最佳连击且不会降低记录', () => {
   const base = createDefaultSave(1000)
   base.endless.unlocked = true

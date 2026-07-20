@@ -27,15 +27,19 @@ function createBricks(levelConfig, layout = levelConfig.layout) {
   const width = usable / levelConfig.columns
   const bricks = []
   layout.forEach((row, rowIndex) => [...row].forEach((cell, columnIndex) => {
-    const hp = Number(cell)
-    if (!hp) return
+    const cellValue = Number(cell)
+    if (!cellValue) return
+    const type = cellValue === 4 ? 'reactor' : 'standard'
+    const hp = type === 'reactor' ? 1 : cellValue
     const moving = levelConfig.movingRows?.includes(rowIndex)
     const x = levelConfig.left + columnIndex * (width + levelConfig.gapX)
     bricks.push({
       id: `${rowIndex}-${columnIndex}`,
+      row: rowIndex,
+      column: columnIndex,
       x,
       y: levelConfig.top + rowIndex * (levelConfig.brickHeight + levelConfig.gapY),
-      w: width, h: levelConfig.brickHeight, hp, maxHp: hp, flash: 0,
+      w: width, h: levelConfig.brickHeight, hp, maxHp: hp, type, flash: 0,
       moving,
       baseX: x,
       motionPhase: rowIndex * 1.17,
@@ -86,6 +90,7 @@ function createBossState(levelConfig, shieldNodes) {
     defeated: false,
     modules,
     attackTimer: config.attackModules?.fireIntervals?.[0] || 0,
+    barrageTimer: config.barrage?.fireIntervals?.[0] || 0,
   }
 }
 
@@ -133,6 +138,7 @@ export class GameEngine {
     this.nextRunId = 1
     this.endlessStartWave = 1
     this.brickMotionTime = 0
+    this.chainReactionDepth = 0
     this.stateVersion = 0
     this.lastPublishedVersion = -1
     this.uiPublishTimer = 0
@@ -165,7 +171,7 @@ export class GameEngine {
       combo: 0, maxCombo: 0, comboTimer: 0, destroyedCount: 0,
       bricks,
       boss: createBossState(this.levelConfig, bricks.length),
-      paddle: { x: (GAME_WIDTH - basePaddleWidth) / 2, y: PADDLE.y, w: basePaddleWidth, h: PADDLE.height, velocityX: 0 },
+      paddle: { x: (GAME_WIDTH - basePaddleWidth) / 2, y: PADDLE.y, w: basePaddleWidth, h: PADDLE.height, velocityX: 0, guardTimer: 0 },
       balls: [], drops: [], message: '准备进入霓虹试炼', laserCooldown: 0,
       resumeCountdown: 0,
       powerups: {
@@ -471,6 +477,7 @@ export class GameEngine {
     }
     paddle.x = clamp(paddle.x, 18, GAME_WIDTH - 18 - paddle.w)
     paddle.velocityX = (paddle.x - oldX) / Math.max(dt, 0.0001)
+    paddle.guardTimer = Math.abs(paddle.velocityX) >= 220 ? 0.22 : Math.max(0, (paddle.guardTimer || 0) - dt)
   }
 
   updateBricks(dt) {
@@ -589,12 +596,18 @@ export class GameEngine {
       boss.pulse = 1
       this.waves.push({ x: boss.x + boss.w / 2, y: boss.y + boss.h / 2, radius: 20, life: 0.7, maxLife: 0.7, color: this.levelConfig.accent })
       this.shake = Math.max(this.shake, 2.2 + boss.phase * 0.7)
-      this.state.message = `棱镜脉冲 · PHASE ${boss.phase}`
+      this.state.message = `${boss.codename} 能量脉冲 · PHASE ${boss.phase}`
       this.touchState()
     }
-    if (!boss.shieldActive && boss.modules.some((module) => !module.destroyed)) {
-      boss.attackTimer -= dt
-      if (boss.attackTimer <= 0) this.fireBossModules()
+    if (!boss.shieldActive) {
+      if (boss.modules.some((module) => !module.destroyed)) {
+        boss.attackTimer -= dt
+        if (boss.attackTimer <= 0) this.fireBossModules()
+      }
+      if (this.levelConfig.boss?.barrage) {
+        boss.barrageTimer -= dt
+        if (boss.barrageTimer <= 0) this.fireBossBarrage()
+      }
     }
     if (boss.shieldActive && this.remainingBricks() === 0) this.breakBossShield()
   }
@@ -605,6 +618,7 @@ export class GameEngine {
     const activeModules = boss.modules.filter((module) => !module.destroyed)
     if (!activeModules.length) return false
     const targetX = this.state.paddle.x + this.state.paddle.w / 2
+    const moduleColor = boss.kind === 'magnetron' ? '#55a7ff' : this.levelConfig.accent
     for (const module of activeModules) {
       const x = module.x + module.w / 2
       const y = module.y + module.h
@@ -617,23 +631,63 @@ export class GameEngine {
         vx: clamp((targetX - x) * 0.22, -72, 72),
         vy: 220 + boss.phase * 34,
         pulse: this.random() * TAU,
+        kind: 'magnet',
+        color: this.levelConfig.accent,
+        sourceModuleId: module.id,
       })
-      this.spawnImpact(x, y, '#55a7ff', 7)
+      this.spawnImpact(x, y, moduleColor, 7)
     }
     const intervals = this.levelConfig.boss.attackModules.fireIntervals
     boss.attackTimer = intervals[boss.phase - 1] || intervals.at(-1) || 2
-    this.state.message = `磁暴齐射 · ${activeModules.length} 个攻击模块在线`
+    this.state.message = `模块齐射 · ${activeModules.length} 个攻击模块在线`
+    this.touchState()
+    return true
+  }
+
+  fireBossBarrage() {
+    const boss = this.state.boss
+    const barrage = this.levelConfig.boss?.barrage
+    if (!boss || boss.defeated || boss.shieldActive || !barrage) return false
+    const count = barrage.counts[boss.phase - 1] || barrage.counts.at(-1) || 1
+    const speed = barrage.speeds[boss.phase - 1] || barrage.speeds.at(-1) || 250
+    const spread = barrage.spread || 42
+    const originX = boss.x + boss.w / 2
+    const originY = boss.y + boss.h
+    const targetX = this.state.paddle.x + this.state.paddle.w / 2
+    const color = boss.kind === 'furnace' ? '#ff7b54' : this.levelConfig.accent
+    for (let index = 0; index < count; index += 1) {
+      const offset = (index - (count - 1) / 2) * spread
+      const aimedX = targetX + offset
+      this.hazards.push({
+        id: `barrage-${boss.phase}-${this.state.runId}-${Math.round(this.random() * 1e7)}`,
+        x: originX - 7,
+        y: originY,
+        w: 14,
+        h: 22,
+        vx: clamp((aimedX - originX) * 0.3, -168, 168),
+        vy: speed,
+        pulse: this.random() * TAU,
+        kind: boss.kind === 'furnace' ? 'ember' : 'zenith',
+        color,
+      })
+    }
+    boss.barrageTimer = barrage.fireIntervals[boss.phase - 1] || barrage.fireIntervals.at(-1) || 3
+    this.spawnImpact(originX, originY, color, 10 + count * 2)
+    this.state.message = `${boss.codename} · ${count > 1 ? `${count} 重扇形弹幕` : '锁定火种'}`
     this.touchState()
     return true
   }
 
   damageBossModule(module, x, y, source = 'ball') {
     if (!module || module.destroyed || module.hitCooldown > 0) return false
+    const moduleColor = this.state.boss?.kind === 'magnetron' ? '#55a7ff' : this.levelConfig.accent
     if (this.state.boss?.shieldActive) {
       module.hitCooldown = source === 'laser' ? 0.06 : 0.12
       module.flash = 0.1
-      this.state.message = '磁盾联锁中 · 先清除阵列节点'
-      this.spawnImpact(x, y, COLORS.cyan, 6)
+      this.state.message = this.state.boss.kind === 'zenith'
+        ? '星穹护盾联锁中 · 先清除阵列节点'
+        : '磁盾联锁中 · 先清除阵列节点'
+      this.spawnImpact(x, y, moduleColor, 6)
       this.touchState()
       return false
     }
@@ -648,14 +702,16 @@ export class GameEngine {
     const points = destroyed ? 1200 : 420
     this.state.score += points
     this.state.bestScore = Math.max(this.state.bestScore, this.state.score)
-    this.floaters.push({ x, y, text: destroyed ? `MODULE DOWN · +${points}` : `MODULE -1 · +${points}`, life: 0.82, color: '#55a7ff' })
-    this.spawnBurst(x, y, destroyed ? COLORS.gold : '#55a7ff', destroyed ? 40 : 16)
+    this.floaters.push({ x, y, text: destroyed ? `MODULE DOWN · +${points}` : `MODULE -1 · +${points}`, life: 0.82, color: moduleColor })
+    this.spawnBurst(x, y, destroyed ? COLORS.gold : moduleColor, destroyed ? 40 : 16)
     this.shake = Math.max(this.shake, destroyed ? 7 : 3)
     this.flash = Math.max(this.flash, destroyed ? 0.2 : 0.08)
     this.state.message = destroyed ? `${module.side === 'left' ? '左' : '右'}侧攻击模块已摧毁` : `攻击模块耐久 ${module.hp} / ${module.maxHp}`
     if (destroyed && this.state.boss.modules.every((entry) => entry.destroyed)) {
-      this.hazards.length = 0
-      this.state.message = '全部攻击模块离线 · 磁暴齐射终止'
+      this.hazards = this.hazards.filter((hazard) => hazard.kind !== 'magnet')
+      this.state.message = this.state.boss.kind === 'zenith'
+        ? '全部攻击模块离线 · 奇点齐射终止'
+        : '全部攻击模块离线 · 磁暴齐射终止'
     }
     this.touchState()
     return true
@@ -678,17 +734,49 @@ export class GameEngine {
       }
       if (hazard.y < GAME_HEIGHT + 30) kept.push(hazard)
     }
-    this.hazards = this.state.mode === 'playing' && !clearedByShield ? kept : []
+    const modulesOffline = this.state.boss?.modules?.length > 0
+      && this.state.boss.modules.every((module) => module.destroyed)
+    this.hazards = this.state.mode === 'playing' && !clearedByShield
+      ? kept.filter((hazard) => !modulesOffline || hazard.kind !== 'magnet')
+      : []
     if (this.hazards.length !== initialCount) this.touchState()
   }
 
   takeBossHazardHit(hazard) {
     const x = hazard.x + hazard.w / 2
     const y = this.state.paddle.y
+    const hazardLabel = hazard.kind === 'ember'
+      ? '熔火弹幕'
+      : hazard.kind === 'zenith'
+        ? '星穹弹幕'
+        : this.state.boss?.kind === 'zenith' ? '奇点模块脉冲' : '磁暴脉冲'
+    if (Math.abs(this.state.paddle.velocityX) >= 220 || this.state.paddle.guardTimer > 0) {
+      const points = 240 + (this.state.boss?.phase || 1) * 60
+      this.state.score += points
+      this.state.bestScore = Math.max(this.state.bestScore, this.state.score)
+      this.state.combo += 1
+      this.state.comboTimer = this.comboWindow()
+      this.state.maxCombo = Math.max(this.state.maxCombo, this.state.combo)
+      this.state.message = `高速招架${hazardLabel} · +${points}`
+      this.floaters.push({ x, y, text: `PARRY +${points}`, life: 0.82, color: COLORS.gold })
+      this.spawnBurst(x, y, COLORS.gold, 28)
+      this.waves.push({ x, y, radius: 9, life: 0.46, maxLife: 0.46, color: COLORS.gold })
+      this.flash = Math.max(this.flash, 0.12)
+      this.shake = Math.max(this.shake, 4)
+      const sourceModule = hazard.sourceModuleId
+        ? this.state.boss?.modules.find((module) => module.id === hazard.sourceModuleId && !module.destroyed)
+        : null
+      if (sourceModule && !this.state.boss.shieldActive) {
+        sourceModule.hitCooldown = 0
+        this.damageBossModule(sourceModule, sourceModule.x + sourceModule.w / 2, sourceModule.y + sourceModule.h / 2, 'parry')
+      }
+      this.touchState()
+      return 'parry'
+    }
     if (this.state.shieldCharges > 0) {
       this.state.shieldCharges -= 1
       this.hazards.length = 0
-      this.state.message = `能量护盾吸收磁暴 · 剩余 ${this.state.shieldCharges}`
+      this.state.message = `能量护盾吸收${hazardLabel} · 剩余 ${this.state.shieldCharges}`
       this.spawnBurst(x, y, COLORS.cyan, 32)
       this.waves.push({ x, y, radius: 12, life: 0.52, maxLife: 0.52, color: COLORS.cyan })
       this.flash = Math.max(this.flash, 0.16)
@@ -703,7 +791,7 @@ export class GameEngine {
     this.loseBall()
     if (this.state.mode === 'ready' && this.modifiers.shieldCharges > 0) {
       this.state.shieldCharges = 1
-      this.state.message = `磁暴命中 · 生命 -1 · 护盾恢复 ${this.state.shieldCharges}`
+      this.state.message = `${hazardLabel}命中 · 生命 -1 · 护盾恢复 ${this.state.shieldCharges}`
       this.touchState(); this.publish(true)
     }
     return 'life'
@@ -715,6 +803,7 @@ export class GameEngine {
     boss.shieldActive = false
     boss.shieldNodes = 0
     if (boss.modules.some((module) => !module.destroyed)) boss.attackTimer = Math.min(boss.attackTimer, 0.9)
+    if (this.levelConfig.boss?.barrage) boss.barrageTimer = Math.min(boss.barrageTimer, boss.modules.length ? 2.1 : 1.1)
     boss.pulse = 1
     this.flash = Math.max(this.flash, 0.22)
     this.shake = Math.max(this.shake, 6)
@@ -732,7 +821,7 @@ export class GameEngine {
       boss.hitCooldown = 0.14
       boss.flash = 0.12
       this.state.message = `核心锁定 · 先摧毁 ${activeModules.length} 个攻击模块`
-      this.spawnImpact(x, y, '#55a7ff', 10)
+      this.spawnImpact(x, y, boss.kind === 'magnetron' ? '#55a7ff' : this.levelConfig.accent, 10)
       this.touchState()
       return false
     }
@@ -778,6 +867,7 @@ export class GameEngine {
     boss.vx = (phase % 2 ? 1 : -1) * this.levelConfig.boss.phaseSpeeds[phase - 1]
     boss.hitCooldown = 0.45
     boss.attackTimer = this.levelConfig.boss.attackModules?.fireIntervals?.[phase - 1] || boss.attackTimer
+    boss.barrageTimer = this.levelConfig.boss.barrage?.fireIntervals?.[phase - 1] || boss.barrageTimer
     boss.pulseTimer = Math.max(2.7, 4.6 - phase * 0.55)
     boss.pulse = 1
     this.state.message = `PHASE ${phase} · 护盾阵列重构`
@@ -821,8 +911,25 @@ export class GameEngine {
     this.spawnImpact(ball.x, ball.y, this.levelConfig.accent, 4)
   }
 
+  detonateReactor(brick) {
+    const centerX = brick.x + brick.w / 2
+    const centerY = brick.y + brick.h / 2
+    const nearby = this.state.bricks.filter((candidate) => candidate.hp > 0
+      && candidate !== brick
+      && Math.abs(candidate.row - brick.row) <= 1
+      && Math.abs(candidate.column - brick.column) <= 1)
+    this.spawnBurst(centerX, centerY, '#ff9b54', 48)
+    this.waves.push({ x: centerX, y: centerY, radius: 10, life: 0.56, maxLife: 0.56, color: '#ff7b54' })
+    this.shake = Math.max(this.shake, 7)
+    this.flash = Math.max(this.flash, 0.2)
+    for (const candidate of nearby) {
+      this.damageBrick(candidate, candidate.x + candidate.w / 2, candidate.y + candidate.h / 2, 'reactor')
+    }
+    return nearby.length
+  }
+
   damageBrick(brick, x, y, source) {
-    if (brick.hp <= 0) return
+    if (brick.hp <= 0) return false
     brick.hp -= 1
     brick.flash = 0.14
     const destroyed = brick.hp === 0
@@ -844,13 +951,22 @@ export class GameEngine {
       this.state.destroyedCount += 1
       this.spawnRewards(brick.x + brick.w / 2, brick.y + brick.h / 2)
     }
-    this.state.message = this.state.combo >= 10 ? `${this.state.combo} 连击 · 能量过载！` : `${this.state.combo} 连击`
+    let reactorHits = 0
+    if (destroyed && brick.type === 'reactor') {
+      this.chainReactionDepth += 1
+      reactorHits = this.detonateReactor(brick)
+      this.chainReactionDepth -= 1
+    }
+    this.state.message = reactorHits > 0
+      ? `熔芯引爆 · 波及 ${reactorHits} 个节点`
+      : this.state.combo >= 10 ? `${this.state.combo} 连击 · 能量过载！` : `${this.state.combo} 连击`
     this.touchState()
-    if (this.remainingBricks() === 0) {
+    if (this.chainReactionDepth === 0 && this.state.mode === 'playing' && this.remainingBricks() === 0) {
       if (this.state.boss) this.breakBossShield()
       else if (this.state.runType === 'endless') this.advanceEndlessWave()
       else this.winLevel()
     }
+    return true
   }
 
   advanceEndlessWave() {
@@ -1183,6 +1299,7 @@ export class GameEngine {
       })),
       modulesAlive: boss.modules.filter((module) => !module.destroyed).length,
       hazards: this.hazards.length,
+      barrage: Boolean(this.levelConfig.boss?.barrage),
     }
   }
 
@@ -1235,12 +1352,12 @@ export class GameEngine {
       },
       combo: this.state.combo, maxCombo: this.state.maxCombo, message: this.state.message,
       resumeCountdown: Number(this.state.resumeCountdown.toFixed(1)),
-      paddle: { x: +this.state.paddle.x.toFixed(1), y: this.state.paddle.y, width: +this.state.paddle.w.toFixed(1), velocityX: +this.state.paddle.velocityX.toFixed(1) },
+      paddle: { x: +this.state.paddle.x.toFixed(1), y: this.state.paddle.y, width: +this.state.paddle.w.toFixed(1), velocityX: +this.state.paddle.velocityX.toFixed(1), guardTimer: +(this.state.paddle.guardTimer || 0).toFixed(2) },
       balls: this.state.balls.map((ball) => ({ id: ball.id, x: +ball.x.toFixed(1), y: +ball.y.toFixed(1), vx: +ball.vx.toFixed(1), vy: +ball.vy.toFixed(1), radius: ball.r, stuck: ball.stuck, stallTimer: +ball.stallTimer.toFixed(1) })),
-      bricks: this.state.bricks.filter((brick) => brick.hp > 0).map((brick) => ({ id: brick.id, x: +brick.x.toFixed(1), y: brick.y, width: +brick.w.toFixed(1), height: brick.h, hp: brick.hp, maxHp: brick.maxHp, moving: brick.moving, velocityX: +brick.velocityX.toFixed(1) })),
+      bricks: this.state.bricks.filter((brick) => brick.hp > 0).map((brick) => ({ id: brick.id, type: brick.type, x: +brick.x.toFixed(1), y: brick.y, width: +brick.w.toFixed(1), height: brick.h, hp: brick.hp, maxHp: brick.maxHp, moving: brick.moving, velocityX: +brick.velocityX.toFixed(1) })),
       drops: this.state.drops.map((drop) => ({ kind: drop.kind, type: drop.type || 'coin', x: +drop.x.toFixed(1), y: +drop.y.toFixed(1) })),
       projectiles: this.projectiles.length,
-      hazards: this.hazards.map((hazard) => ({ x: +hazard.x.toFixed(1), y: +hazard.y.toFixed(1), vx: +hazard.vx.toFixed(1), vy: hazard.vy })),
+      hazards: this.hazards.map((hazard) => ({ kind: hazard.kind || 'magnet', x: +hazard.x.toFixed(1), y: +hazard.y.toFixed(1), vx: +hazard.vx.toFixed(1), vy: hazard.vy })),
       activeEffects: this.activeEffects(),
       bricksRemaining: this.remainingBricks(), totalBricks: this.state.bricks.length,
       effects: { particles: this.particles.length, pool: this.particlePool.length, waves: this.waves.length, trailPoints: this.trail.length, shake: +this.shake.toFixed(1) },
@@ -1335,32 +1452,35 @@ export class GameEngine {
       ctx.globalAlpha = 1
     }
     for (const module of boss.modules) {
+      const moduleColor = boss.kind === 'magnetron' ? '#55a7ff' : this.levelConfig.accent
       ctx.save()
       ctx.globalAlpha = module.destroyed ? .22 : 1
-      ctx.shadowColor = module.destroyed ? COLORS.danger : '#55a7ff'
+      ctx.shadowColor = module.destroyed ? COLORS.danger : moduleColor
       ctx.shadowBlur = module.destroyed ? 5 : 20
       ctx.fillStyle = module.flash > 0 ? '#ffffff' : module.destroyed ? 'rgba(62,32,48,.82)' : 'rgba(13,35,58,.98)'
-      ctx.strokeStyle = module.destroyed ? COLORS.danger : '#55a7ff'
+      ctx.strokeStyle = module.destroyed ? COLORS.danger : moduleColor
       ctx.lineWidth = 2
       ctx.beginPath(); ctx.roundRect(module.x, module.y, module.w, module.h, 8); ctx.fill(); ctx.stroke()
-      ctx.fillStyle = module.destroyed ? '#50303c' : '#9bd0ff'
+      ctx.fillStyle = module.destroyed ? '#50303c' : moduleColor
       ctx.beginPath(); ctx.arc(module.x + module.w / 2, module.y + 13, 6, 0, TAU); ctx.fill()
       ctx.fillStyle = 'rgba(255,255,255,.1)'; ctx.fillRect(module.x + 5, module.y + module.h - 9, module.w - 10, 3)
-      ctx.fillStyle = module.destroyed ? COLORS.danger : '#55a7ff'
+      ctx.fillStyle = module.destroyed ? COLORS.danger : moduleColor
       ctx.fillRect(module.x + 5, module.y + module.h - 9, (module.w - 10) * module.hp / module.maxHp, 3)
       ctx.restore()
     }
-    ctx.shadowColor = boss.shieldActive ? COLORS.cyan : COLORS.gold
+    ctx.shadowColor = boss.shieldActive ? COLORS.cyan : this.levelConfig.accent
     ctx.shadowBlur = boss.flash > 0 ? 38 : 22
     ctx.fillStyle = boss.flash > 0 ? '#ffffff' : 'rgba(13, 29, 48, .98)'
-    ctx.strokeStyle = boss.shieldActive ? COLORS.cyan : COLORS.gold
+    ctx.strokeStyle = boss.shieldActive ? COLORS.cyan : this.levelConfig.accent
     ctx.lineWidth = 2
     ctx.beginPath(); ctx.roundRect(boss.x, boss.y, boss.w, boss.h, 16); ctx.fill(); ctx.stroke()
-    ctx.fillStyle = 'rgba(185,128,255,.28)'
+    ctx.fillStyle = boss.kind === 'furnace' ? 'rgba(255,123,84,.3)' : 'rgba(185,128,255,.28)'
     ctx.beginPath(); ctx.moveTo(boss.x + 18, cy); ctx.lineTo(boss.x - 18, boss.y + 8); ctx.lineTo(boss.x - 7, boss.y + boss.h - 5); ctx.closePath(); ctx.fill()
     ctx.beginPath(); ctx.moveTo(boss.x + boss.w - 18, cy); ctx.lineTo(boss.x + boss.w + 18, boss.y + 8); ctx.lineTo(boss.x + boss.w + 7, boss.y + boss.h - 5); ctx.closePath(); ctx.fill()
     const core = ctx.createRadialGradient(cx - 5, cy - 6, 2, cx, cy, 22)
-    core.addColorStop(0, '#fff'); core.addColorStop(.28, boss.shieldActive ? COLORS.cyan : COLORS.gold); core.addColorStop(1, '#7135b9')
+    const coreColor = boss.kind === 'furnace' ? '#ff7b54' : boss.kind === 'zenith' ? '#b980ff' : COLORS.gold
+    const edgeColor = boss.kind === 'furnace' ? '#8f251d' : '#7135b9'
+    core.addColorStop(0, '#fff'); core.addColorStop(.28, boss.shieldActive ? COLORS.cyan : coreColor); core.addColorStop(1, edgeColor)
     ctx.fillStyle = core
     ctx.beginPath(); ctx.moveTo(cx, cy - 20); ctx.lineTo(cx + 20, cy); ctx.lineTo(cx, cy + 20); ctx.lineTo(cx - 20, cy); ctx.closePath(); ctx.fill()
     if (boss.shieldActive) {
@@ -1381,10 +1501,12 @@ export class GameEngine {
       const cy = hazard.y + hazard.h / 2
       ctx.save()
       ctx.translate(cx, cy)
-      ctx.rotate(Math.sin(hazard.pulse) * .16)
-      ctx.shadowColor = '#55a7ff'; ctx.shadowBlur = 22
+      ctx.rotate(Math.sin(hazard.pulse) * (hazard.kind === 'ember' ? .28 : .16))
+      const color = hazard.color || '#55a7ff'
+      const pale = hazard.kind === 'ember' ? '#fff1d6' : hazard.kind === 'zenith' ? '#f1e6ff' : '#d8ecff'
+      ctx.shadowColor = color; ctx.shadowBlur = 22
       const gradient = ctx.createLinearGradient(0, -12, 0, 12)
-      gradient.addColorStop(0, '#d8ecff'); gradient.addColorStop(.35, '#55a7ff'); gradient.addColorStop(1, '#704dff')
+      gradient.addColorStop(0, pale); gradient.addColorStop(.35, color); gradient.addColorStop(1, hazard.kind === 'ember' ? '#d92f45' : '#704dff')
       ctx.fillStyle = gradient
       ctx.beginPath(); ctx.moveTo(0, -13); ctx.lineTo(8, 0); ctx.lineTo(0, 13); ctx.lineTo(-8, 0); ctx.closePath(); ctx.fill()
       ctx.strokeStyle = 'rgba(218,239,255,.8)'; ctx.lineWidth = 1; ctx.stroke()
@@ -1395,12 +1517,20 @@ export class GameEngine {
   drawBricks(ctx) {
     for (const brick of this.state.bricks) {
       if (brick.hp <= 0) continue
+      const reactor = brick.type === 'reactor'
       const reinforced = brick.maxHp > 1
-      ctx.save(); ctx.shadowColor = reinforced ? COLORS.purple : this.levelConfig.accent; ctx.shadowBlur = brick.flash > 0 ? 26 : 10
-      ctx.fillStyle = brick.flash > 0 ? '#fff' : reinforced ? COLORS.purple : this.levelConfig.accent
+      ctx.save(); ctx.shadowColor = reactor ? '#ff7b54' : reinforced ? COLORS.purple : this.levelConfig.accent; ctx.shadowBlur = brick.flash > 0 ? 26 : reactor ? 18 : 10
+      ctx.fillStyle = brick.flash > 0 ? '#fff' : reactor ? '#ff7b54' : reinforced ? COLORS.purple : this.levelConfig.accent
       ctx.beginPath(); ctx.roundRect(brick.x, brick.y, brick.w, brick.h, 7); ctx.fill()
-      ctx.strokeStyle = reinforced ? '#e0c5ff' : 'rgba(211,255,248,.68)'; ctx.lineWidth = reinforced ? 2 : 1; ctx.stroke()
-      if (reinforced) {
+      ctx.strokeStyle = reactor ? '#ffe2a8' : reinforced ? '#e0c5ff' : 'rgba(211,255,248,.68)'; ctx.lineWidth = reactor || reinforced ? 2 : 1; ctx.stroke()
+      if (reactor) {
+        const cx = brick.x + brick.w / 2
+        const cy = brick.y + brick.h / 2
+        ctx.shadowBlur = 12; ctx.shadowColor = COLORS.gold; ctx.fillStyle = '#fff2c7'
+        ctx.beginPath(); ctx.moveTo(cx, cy - 8); ctx.lineTo(cx + 8, cy); ctx.lineTo(cx, cy + 8); ctx.lineTo(cx - 8, cy); ctx.closePath(); ctx.fill()
+        ctx.strokeStyle = 'rgba(98,20,24,.72)'; ctx.lineWidth = 1
+        ctx.beginPath(); ctx.moveTo(brick.x + 5, cy); ctx.lineTo(cx - 9, cy); ctx.moveTo(cx + 9, cy); ctx.lineTo(brick.x + brick.w - 5, cy); ctx.stroke()
+      } else if (reinforced) {
         ctx.shadowBlur = 0; ctx.fillStyle = 'rgba(15,10,35,.7)'; ctx.fillRect(brick.x + 9, brick.y + brick.h / 2 - 1, brick.w - 18, 2)
         for (let i = 0; i < brick.maxHp; i += 1) { ctx.fillStyle = i < brick.hp ? COLORS.gold : 'rgba(255,255,255,.16)'; ctx.beginPath(); ctx.arc(brick.x + brick.w / 2 + (i - (brick.maxHp - 1) / 2) * 10, brick.y + brick.h / 2, 3, 0, TAU); ctx.fill() }
       }
@@ -1423,10 +1553,15 @@ export class GameEngine {
 
   drawPaddle(ctx) {
     const paddle = this.state.paddle
-    ctx.save(); ctx.shadowColor = this.state.powerups.laser.remaining > 0 ? POWERUPS.laser.color : COLORS.cyan; ctx.shadowBlur = 25
+    const guardActive = paddle.guardTimer > 0
+    ctx.save(); ctx.shadowColor = guardActive ? COLORS.gold : this.state.powerups.laser.remaining > 0 ? POWERUPS.laser.color : COLORS.cyan; ctx.shadowBlur = guardActive ? 34 : 25
     const gradient = ctx.createLinearGradient(paddle.x, 0, paddle.x + paddle.w, 0)
-    gradient.addColorStop(0, '#1bb9b0'); gradient.addColorStop(.48, '#e9fffb'); gradient.addColorStop(1, '#65ead6')
+    gradient.addColorStop(0, guardActive ? '#ff9b54' : '#1bb9b0'); gradient.addColorStop(.48, '#fff'); gradient.addColorStop(1, guardActive ? '#ffd166' : '#65ead6')
     ctx.fillStyle = gradient; ctx.beginPath(); ctx.roundRect(paddle.x, paddle.y, paddle.w, paddle.h, 9); ctx.fill()
+    if (guardActive) {
+      ctx.strokeStyle = 'rgba(255,226,151,.85)'; ctx.lineWidth = 2
+      ctx.beginPath(); ctx.roundRect(paddle.x - 3, paddle.y - 3, paddle.w + 6, paddle.h + 6, 12); ctx.stroke()
+    }
     if (this.state.powerups.laser.remaining > 0) {
       ctx.fillStyle = POWERUPS.laser.color
       for (const offset of [15, paddle.w - 21]) { ctx.beginPath(); ctx.roundRect(paddle.x + offset, paddle.y - 9, 7, 13, 3); ctx.fill() }
@@ -1501,7 +1636,11 @@ export class GameEngine {
       if (this.state.runType === 'endless') { this.drawEndlessBriefing(ctx); return }
       ctx.fillStyle = this.levelConfig.accent; ctx.font = '900 13px system-ui'; ctx.fillText(`${this.levelConfig.chapterCodename} / MISSION BRIEFING`, GAME_WIDTH / 2, 208)
       ctx.fillStyle = COLORS.text; ctx.font = '900 34px system-ui'; ctx.fillText(`${String(this.state.level).padStart(2, '0')} · ${this.state.levelName}`, GAME_WIDTH / 2, 260)
-      ctx.fillStyle = COLORS.muted; ctx.font = '500 12px system-ui'; ctx.fillText(this.levelConfig.isBoss ? '守关核心预备战 · 高额清关奖励' : this.levelConfig.chapter, GAME_WIDTH / 2, 292)
+      const briefingSubtitle = this.levelConfig.boss?.barrage
+        ? '高速横移挡板可招架弹幕并反射模块脉冲'
+        : this.levelConfig.isBoss ? '守关核心预备战 · 高额清关奖励' : this.levelConfig.chapter
+      ctx.fillStyle = this.levelConfig.boss?.barrage ? COLORS.gold : COLORS.muted
+      ctx.font = '500 12px system-ui'; ctx.fillText(briefingSubtitle, GAME_WIDTH / 2, 292)
 
       const criteria = [
         ['Ⅰ', '完成关卡', this.levelConfig.isBoss ? (this.levelConfig.boss?.objective || '击破三阶段棱镜核心') : '清除全部砖块', COLORS.cyan],

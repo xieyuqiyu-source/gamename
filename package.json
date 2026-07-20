@@ -1,7 +1,7 @@
 {
   "name": "gamename",
   "private": true,
-  "version": "0.7.0",
+  "version": "0.8.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,6 +10,7 @@
     "test": "node --test tests/*.test.mjs",
     "test:chapter1": "node scripts/verifyChapterOne.mjs",
     "test:chapter2": "node scripts/verifyChapterTwo.mjs",
+    "test:final": "node scripts/verifyFinalChapters.mjs",
     "test:endless": "node scripts/verifyEndless.mjs"
   },
   "dependencies": {

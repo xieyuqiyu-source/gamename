@@ -36,6 +36,35 @@ test('第二章五关使用正式独立布局且磁暴主机配置攻击模块',
   assert.deepEqual(boss.attackModules, { count: 2, hp: 3, fireIntervals: [3.8, 2.8, 2.1] })
 })
 
+test('第三章五关使用熔芯机关砖且熔芯守卫配置三阶段弹幕', () => {
+  const thirdChapter = LEVELS.slice(10, 15)
+  assert.equal(new Set(thirdChapter.map((level) => level.layout.join('|'))).size, 5)
+  assert.ok(thirdChapter.every((level) => level.layout.join('').includes('3')))
+  assert.ok(thirdChapter.every((level) => level.layout.join('').includes('4')))
+  assert.deepEqual(thirdChapter.map((level) => level.ballSpeedMultiplier), [1.22, 1.235, 1.25, 1.265, 1.28])
+  const boss = thirdChapter[4].boss
+  assert.equal(boss.codename, 'FURNACE SERAPH')
+  assert.equal(boss.kind, 'furnace')
+  assert.equal(boss.maxHp, 18)
+  assert.equal(boss.phaseLayouts.length, 3)
+  assert.deepEqual(boss.barrage.counts, [1, 3, 5])
+})
+
+test('第四章五关组合全部机制且星穹意志配置四阶段终局协议', () => {
+  const fourthChapter = LEVELS.slice(15, 20)
+  assert.equal(new Set(fourthChapter.map((level) => level.layout.join('|'))).size, 5)
+  assert.ok(fourthChapter.slice(0, 4).every((level) => level.movingRows.length > 0))
+  assert.deepEqual(fourthChapter.map((level) => level.ballSpeedMultiplier), [1.285, 1.3, 1.315, 1.33, 1.34])
+  const boss = fourthChapter[4].boss
+  assert.equal(boss.codename, 'ZENITH SINGULARITY')
+  assert.equal(boss.kind, 'zenith')
+  assert.equal(boss.phases, 4)
+  assert.equal(boss.maxHp, 24)
+  assert.equal(boss.phaseLayouts.length, 4)
+  assert.deepEqual(boss.attackModules, { count: 2, hp: 4, fireIntervals: [5.4, 4.6, 3.8, 3.2] })
+  assert.deepEqual(boss.barrage.counts, [1, 3, 5, 7])
+})
+
 test('无尽波次会确定性轮换砖阵并逐步增加耐久与球速', () => {
   const wave1 = getEndlessLevelConfig(1)
   const wave4 = getEndlessLevelConfig(4)

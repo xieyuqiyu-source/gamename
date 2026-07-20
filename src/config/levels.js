@@ -149,6 +149,148 @@ const SECOND_CHAPTER_LEVELS = [
   },
 ]
 
+const THIRD_CHAPTER_LEVELS = [
+  {
+    name: '灼热晶格',
+    description: '击穿三重熔晶并引爆橙色熔芯，学习用连锁冲击撕开高耐久阵列。',
+    targetScore: 33000,
+    targetCombo: 68,
+    clearBonus: 72,
+    ballSpeedMultiplier: 1.22,
+    layout: ['330111033', '221442122', '112111211', '041222140', '112111211', '221442122', '330111033'],
+  },
+  {
+    name: '熔线折返',
+    description: '两条热流轨道往返巡弋，熔芯爆破会在移动阵列中持续改写球路。',
+    targetScore: 35200,
+    targetCombo: 72,
+    clearBonus: 78,
+    ballSpeedMultiplier: 1.235,
+    movingRows: [1, 5],
+    motionAmplitude: 15,
+    layout: ['123000321', '214111412', '321222123', '014333410', '321222123', '214111412', '123000321'],
+  },
+  {
+    name: '红莲矩阵',
+    description: '高耐久红莲包围连锁熔芯，选择正确的引爆点可让整片矩阵连续坍缩。',
+    targetScore: 38600,
+    targetCombo: 78,
+    clearBonus: 84,
+    ballSpeedMultiplier: 1.25,
+    movingRows: [3],
+    motionAmplitude: 17,
+    layout: ['334141433', '223222322', '142333241', '411222114', '142333241', '223222322', '334141433'],
+  },
+  {
+    name: '临界回响',
+    description: '三条临界热轨夹持三耐久节点，连锁爆破与高速折返必须同时控制。',
+    targetScore: 42800,
+    targetCombo: 84,
+    clearBonus: 92,
+    ballSpeedMultiplier: 1.265,
+    movingRows: [0, 3, 6],
+    motionAmplitude: 19,
+    layout: ['343222343', '232444232', '123333321', '414222414', '123333321', '232444232', '343222343'],
+  },
+  {
+    name: '熔芯守卫',
+    description: '引爆三阶段熔盾，在核心暴露窗口穿越扇形火雨并终止过载守卫。',
+    targetScore: 56000,
+    targetCombo: 92,
+    clearBonus: 120,
+    ballSpeedMultiplier: 1.28,
+    top: 254,
+    layout: ['340111043', '123333321', '214000412', '041222140', '012444210', '001333100', '000000000'],
+    boss: {
+      kind: 'furnace',
+      codename: 'FURNACE SERAPH',
+      objective: '引爆熔盾并穿越三阶段扇形火雨',
+      maxHp: 18,
+      phases: 3,
+      phaseSpeeds: [124, 164, 208],
+      barrage: { fireIntervals: [5.2, 4.4, 3.6], counts: [1, 3, 5], speeds: [238, 258, 280], spread: 48 },
+      phaseLayouts: [
+        ['340111043', '123333321', '214000412', '041222140', '012444210', '001333100', '000000000'],
+        ['304010403', '143333341', '021444120', '412222214', '014333410', '001414100', '000000000'],
+        ['430101034', '214333412', '142444241', '013333310', '041222140', '003414300', '000000000'],
+      ],
+    },
+  },
+]
+
+const FOURTH_CHAPTER_LEVELS = [
+  {
+    name: '星环序列',
+    description: '紫色星环组合移动磁轨、三重耐久与熔芯连锁，进入最终规则混合区。',
+    targetScore: 46800,
+    targetCombo: 88,
+    clearBonus: 100,
+    ballSpeedMultiplier: 1.285,
+    movingRows: [2, 4],
+    motionAmplitude: 16,
+    layout: ['303141303', '232333232', '124222421', '341111143', '124222421', '232333232', '303141303'],
+  },
+  {
+    name: '紫电穹顶',
+    description: '三层紫电穹顶反向横移，连续引爆星核才能打开不断变化的安全通道。',
+    targetScore: 50800,
+    targetCombo: 94,
+    clearBonus: 110,
+    ballSpeedMultiplier: 1.3,
+    movingRows: [0, 3, 6],
+    motionAmplitude: 18,
+    layout: ['343404343', '234333432', '142222241', '414333414', '142222241', '234333432', '343404343'],
+  },
+  {
+    name: '终端密钥',
+    description: '四枚终端密钥藏在三耐久阵列中，连锁冲击会逐段解开星穹访问协议。',
+    targetScore: 55200,
+    targetCombo: 100,
+    clearBonus: 120,
+    ballSpeedMultiplier: 1.315,
+    movingRows: [1, 5],
+    motionAmplitude: 20,
+    layout: ['333141333', '241333142', '134222431', '413333314', '134222431', '241333142', '333141333'],
+  },
+  {
+    name: '零点折射',
+    description: '终局前的零点阵列将移动、强化与爆破压缩到最高密度，考验完整资源循环。',
+    targetScore: 61800,
+    targetCombo: 110,
+    clearBonus: 135,
+    ballSpeedMultiplier: 1.33,
+    movingRows: [0, 2, 4, 6],
+    motionAmplitude: 21,
+    layout: ['343434343', '234333432', '341444143', '423333324', '341444143', '234333432', '343434343'],
+  },
+  {
+    name: '星穹意志',
+    description: '击破四阶段终极意志：熔盾、双侧模块、组合弹幕与高速核心将同时上线。',
+    targetScore: 80000,
+    targetCombo: 120,
+    clearBonus: 180,
+    ballSpeedMultiplier: 1.34,
+    top: 258,
+    layout: ['340111043', '123333321', '214000412', '041222140', '012444210', '001333100', '000000000'],
+    boss: {
+      kind: 'zenith',
+      codename: 'ZENITH SINGULARITY',
+      objective: '摧毁双模块并击破四阶段终极意志',
+      maxHp: 24,
+      phases: 4,
+      phaseSpeeds: [142, 182, 224, 266],
+      attackModules: { count: 2, hp: 4, fireIntervals: [5.4, 4.6, 3.8, 3.2] },
+      barrage: { fireIntervals: [6.2, 5.4, 4.6, 4], counts: [1, 3, 5, 7], speeds: [248, 268, 288, 308], spread: 42 },
+      phaseLayouts: [
+        ['340111043', '123333321', '214000412', '041222140', '012444210', '001333100', '000000000'],
+        ['304010403', '143333341', '021444120', '412222214', '014333410', '001414100', '000000000'],
+        ['430101034', '214333412', '142444241', '013333310', '041222140', '003414300', '000000000'],
+        ['404030404', '134444431', '243333342', '412444214', '034333430', '001434100', '000000000'],
+      ],
+    },
+  },
+]
+
 function strengthenLayout(pattern, level) {
   return pattern.map((row, rowIndex) => [...row].map((cell, columnIndex) => {
     if (cell === '0') return '0'
@@ -163,7 +305,9 @@ function createLevel(level) {
   const chapterIndex = (level - 1) % 5
   const chapterOneConfig = level <= 5 ? FIRST_CHAPTER_LEVELS[level - 1] : null
   const chapterTwoConfig = level >= 6 && level <= 10 ? SECOND_CHAPTER_LEVELS[level - 6] : null
-  const formalConfig = chapterOneConfig || chapterTwoConfig
+  const chapterThreeConfig = level >= 11 && level <= 15 ? THIRD_CHAPTER_LEVELS[level - 11] : null
+  const chapterFourConfig = level >= 16 && level <= 20 ? FOURTH_CHAPTER_LEVELS[level - 16] : null
+  const formalConfig = chapterOneConfig || chapterTwoConfig || chapterThreeConfig || chapterFourConfig
   return {
     id: level,
     name: formalConfig?.name || LEVEL_NAMES[level - 1],

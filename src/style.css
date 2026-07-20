@@ -238,6 +238,7 @@ kbd { min-width: 28px; height: 27px; display: inline-grid; place-items: center; 
   .control-guide div { min-height: 30px; }
   .effect-rack { margin-bottom: 10px; }
   .boss-terminal { gap: 5px; margin-bottom: 8px; padding: 8px 10px; }
+  .game-app:has(.boss-terminal) .control-guide { display: none; }
   .save-readout { margin-top: 9px; padding: 7px 9px; }
   .mission-panel .life-readout { margin-top: 13px; }
   .game-footer { display: none; }
