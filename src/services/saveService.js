@@ -1,11 +1,11 @@
+import { UPGRADE_DEFINITIONS } from '../config/progressionConfig.js'
+
 export const SAVE_KEY = 'gamename:save'
 export const LEGACY_STORE_KEY = 'gamename:game'
-export const SAVE_VERSION = 1
+export const SAVE_VERSION = 2
 
-const UPGRADE_KEYS = [
-  'paddleWidth', 'itemDropRate', 'coinBonus', 'magnetRange',
-  'comboGrace', 'bossShield', 'extraLife',
-]
+const UPGRADE_LIMITS = Object.fromEntries(UPGRADE_DEFINITIONS.map((definition) => [definition.key, definition.maxLevel]))
+const UPGRADE_KEYS = Object.keys(UPGRADE_LIMITS)
 
 const nonNegativeInt = (value, fallback = 0) => {
   const parsed = Number(value)
@@ -30,6 +30,7 @@ export function createDefaultSave(now = Date.now()) {
         1: { stars: 0, highScore: 0, bestCombo: 0, attempts: 0, clears: 0, bestLives: 0, lastPlayedAt: 0 },
       },
       lastResult: null,
+      claimedStarRewards: [],
     },
     endless: { unlocked: false, highScore: 0, highestWave: 0, bestCombo: 0 },
     upgrades: {
@@ -62,6 +63,7 @@ export function normalizeSave(input, now = Date.now()) {
   if (nonNegativeInt(input.saveVersion, 0) > SAVE_VERSION) throw new Error('存档版本高于当前客户端')
 
   const base = createDefaultSave(now)
+  const inputVersion = nonNegativeInt(input.saveVersion, 1)
   const records = {}
   const inputRecords = input.campaign?.levelRecords
   if (inputRecords && typeof inputRecords === 'object' && !Array.isArray(inputRecords)) {
@@ -73,7 +75,7 @@ export function normalizeSave(input, now = Date.now()) {
   if (!records[1]) records[1] = normalizeRecord()
 
   const upgrades = {}
-  for (const key of UPGRADE_KEYS) upgrades[key] = nonNegativeInt(input.upgrades?.[key])
+  for (const key of UPGRADE_KEYS) upgrades[key] = Math.min(UPGRADE_LIMITS[key], nonNegativeInt(input.upgrades?.[key]))
 
   const lastResult = input.campaign?.lastResult
   const safeLastResult = lastResult && typeof lastResult === 'object' ? {
@@ -96,12 +98,20 @@ export function normalizeSave(input, now = Date.now()) {
       createdAt: timestamp(input.profile?.createdAt, now),
       updatedAt: timestamp(input.profile?.updatedAt, now),
       ...(typeof input.profile?.migratedFrom === 'string' ? { migratedFrom: input.profile.migratedFrom } : {}),
+      ...(inputVersion < SAVE_VERSION ? { migratedFromSaveVersion: inputVersion } : (
+        nonNegativeInt(input.profile?.migratedFromSaveVersion) > 0
+          ? { migratedFromSaveVersion: nonNegativeInt(input.profile.migratedFromSaveVersion) }
+          : {}
+      )),
     },
     currency: { coins: nonNegativeInt(input.currency?.coins) },
     campaign: {
       highestUnlockedLevel: Math.min(20, Math.max(1, nonNegativeInt(input.campaign?.highestUnlockedLevel, 1))),
       levelRecords: records,
       lastResult: safeLastResult,
+      claimedStarRewards: Array.isArray(input.campaign?.claimedStarRewards)
+        ? [...new Set(input.campaign.claimedStarRewards.filter((reward) => typeof reward === 'string'))]
+        : [],
     },
     endless: {
       unlocked: Boolean(input.endless?.unlocked),

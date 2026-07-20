@@ -30,6 +30,10 @@ button { cursor: pointer; }
 .brand-lockup h1 { margin: 0; color: #f1fffc; font-size: clamp(25px, 3vw, 37px); line-height: 1; letter-spacing: 0.04em; }
 .build-status { display: flex; align-items: center; gap: 8px; padding: 9px 13px; border: 1px solid #1e3e45; border-radius: 999px; color: #8aabaa; background: rgba(10, 24, 32, 0.76); font-size: 12px; }
 .live-dot { width: 7px; height: 7px; border-radius: 50%; background: #55f4dd; box-shadow: 0 0 12px #55f4dd; }
+.header-actions { display: flex; align-items: center; gap: 10px; }
+.global-nav { display: flex; gap: 3px; padding: 4px; border: 1px solid #19353e; border-radius: 999px; background: rgba(7, 18, 27, .76); }
+.global-nav button { min-width: 48px; min-height: 28px; padding: 0 10px; border: 0; border-radius: 99px; color: #68868a; background: transparent; font-size: 9px; font-weight: 800; transition: color 180ms ease, background 180ms ease; }
+.global-nav button:hover, .global-nav button.active { color: #061412; background: #55f4dd; }
 
 .game-layout { display: grid; grid-template-columns: 230px minmax(280px, 432px) 230px; justify-content: center; align-items: start; gap: 18px; }
 
@@ -151,11 +155,14 @@ kbd { min-width: 28px; height: 27px; display: inline-grid; place-items: center; 
 @media (max-width: 720px) {
   body { background: #050b12; }
   .game-app { padding: 12px 10px 6px; }
+  .game-app:has(.hub-view) { padding-bottom: 0; }
   .game-header { min-height: 54px; margin-bottom: 10px; }
   .brand-mark { width: 7px; height: 34px; }
   .brand-lockup p { font-size: 8px; }
   .brand-lockup h1 { font-size: 22px; }
   .build-status { padding: 7px 9px; font-size: 9px; }
+  .header-actions { gap: 5px; }
+  .global-nav button { min-width: 39px; min-height: 40px; padding: 0 7px; font-size: 8px; }
   .game-layout { display: block; }
   .control-panel { display: none; }
   .playfield-shell { width: min(100%, calc((100svh - 200px) * 9 / 16)); min-width: 0; margin: 0 auto; border-radius: 13px; }
@@ -181,6 +188,7 @@ kbd { min-width: 28px; height: 27px; display: inline-grid; place-items: center; 
 
 @media (max-width: 390px) {
   .build-status { display: none; }
+  .global-nav button { min-width: 36px; padding: 0 6px; }
   .playfield-shell { width: min(100%, calc((100svh - 192px) * 9 / 16)); }
 }
 

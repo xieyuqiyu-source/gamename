@@ -18,12 +18,12 @@ class MemoryStorage {
   removeItem(key) { this.data.delete(key) }
 }
 
-test('首次加载会建立 v1 正式存档', () => {
+test('首次加载会建立 v2 正式存档', () => {
   const storage = new MemoryStorage()
   const result = loadGameSave(storage, 1000)
 
   assert.equal(result.source, 'new')
-  assert.equal(result.save.saveVersion, 1)
+  assert.equal(result.save.saveVersion, 2)
   assert.equal(result.save.currency.coins, 0)
   assert.equal(JSON.parse(storage.getItem(SAVE_KEY)).profile.createdAt, 1000)
 })
@@ -56,7 +56,23 @@ test('损坏存档会备份原文并安全恢复', () => {
   assert.equal(result.source, 'recovered')
   assert.equal(result.recovered, true)
   assert.equal(storage.getItem(result.backupKey), broken)
-  assert.equal(JSON.parse(storage.getItem(SAVE_KEY)).saveVersion, 1)
+  assert.equal(JSON.parse(storage.getItem(SAVE_KEY)).saveVersion, 2)
+})
+
+test('v1 正式存档会升级到 v2 并补充星级奖励记录', () => {
+  const v1 = createDefaultSave(1000)
+  v1.saveVersion = 1
+  delete v1.campaign.claimedStarRewards
+  v1.upgrades.paddleWidth = 99
+  v1.upgrades.extraLife = 99
+  const storage = new MemoryStorage({ [SAVE_KEY]: JSON.stringify(v1) })
+  const result = loadGameSave(storage, 3500)
+
+  assert.equal(result.save.saveVersion, 2)
+  assert.equal(result.save.profile.migratedFromSaveVersion, 1)
+  assert.deepEqual(result.save.campaign.claimedStarRewards, [])
+  assert.equal(result.save.upgrades.paddleWidth, 5)
+  assert.equal(result.save.upgrades.extraLife, 2)
 })
 
 test('结算会累计尝试但不会降低历史三星和记录', () => {

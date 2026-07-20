@@ -1,6 +1,10 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
-import { LEVEL_ONE, MODE_LABELS } from './config/gameConfig'
+import CampaignHub from './components/CampaignHub.vue'
+import UpgradeLab from './components/UpgradeLab.vue'
+import { MODE_LABELS } from './config/gameConfig'
+import { getChapterLevels, getLevelConfig, LEVELS } from './config/levels'
+import { getRunModifiers, getUpgradeCost, UPGRADE_DEFINITIONS } from './config/progressionConfig'
 import { GameEngine } from './engine/GameEngine'
 import { useGameStore } from './stores/game'
 
@@ -16,6 +20,8 @@ const modeLabel = computed(() => MODE_LABELS[store.mode] || store.mode)
 const record = computed(() => store.currentRecord)
 const isSettlement = computed(() => ['won', 'lost'].includes(store.mode))
 const showReturnButton = computed(() => ['briefing', 'won', 'lost'].includes(store.mode))
+const currentLevel = computed(() => getLevelConfig(store.level))
+const canNavigate = computed(() => !['ready', 'playing', 'paused', 'countdown'].includes(store.mode))
 const saveStatusLabel = computed(() => {
   if (store.saveStatus === 'recovered') return '已恢复新存档'
   if (store.saveSource === 'legacy') return '旧进度已迁移'
@@ -24,7 +30,7 @@ const saveStatusLabel = computed(() => {
 })
 
 const primaryLabel = computed(() => {
-  if (store.mode === 'menu') return '进入任务'
+  if (store.mode === 'menu') return '进入战役'
   if (store.mode === 'briefing') return '开始挑战'
   if (store.mode === 'ready') return '发射小球'
   if (store.mode === 'paused') return '继续游戏'
@@ -39,7 +45,7 @@ function primaryAction() {
   const engine = engineRef.value
   if (!engine) return
   resetArmed.value = false
-  if (store.mode === 'menu') engine.openBriefing()
+  if (store.mode === 'menu') openCampaign()
   else if (store.mode === 'briefing') engine.startNewGame()
   else if (store.mode === 'won' || store.mode === 'lost') engine.startNewGame()
   else if (store.mode === 'ready') engine.launch()
@@ -52,12 +58,55 @@ function pauseAction() {
   engineRef.value?.togglePause()
 }
 
-function returnToTitle() {
+function returnToCampaign() {
   resetArmed.value = false
   engineRef.value?.loadProfile({
     coins: store.currency.coins,
     bestScore: record.value.highScore,
+    modifiers: getRunModifiers(store.upgrades),
+    levelConfig: currentLevel.value,
   })
+  store.showCampaign()
+}
+
+function openCampaign() {
+  resetArmed.value = false
+  store.showCampaign()
+}
+
+function openUpgrades() {
+  resetArmed.value = false
+  engineRef.value?.loadProfile({
+    coins: store.currency.coins,
+    bestScore: record.value.highScore,
+    modifiers: getRunModifiers(store.upgrades),
+    levelConfig: currentLevel.value,
+  })
+  store.showUpgrades()
+}
+
+function showTitle() {
+  resetArmed.value = false
+  const level = getLevelConfig(store.selectedLevel)
+  const levelRecord = store.campaign.levelRecords[String(level.id)] || { highScore: 0 }
+  engineRef.value?.loadProfile({
+    coins: store.currency.coins,
+    bestScore: levelRecord.highScore,
+    modifiers: getRunModifiers(store.upgrades),
+    levelConfig: level,
+  })
+  store.showTitle()
+}
+
+function playLevel(level) {
+  if (!store.selectLevel(level.id)) return
+  const levelRecord = store.campaign.levelRecords[String(level.id)] || { highScore: 0 }
+  engineRef.value?.configureLevel(level, {
+    coins: store.currency.coins,
+    bestScore: levelRecord.highScore,
+    modifiers: getRunModifiers(store.upgrades),
+  })
+  store.screen = 'game'
 }
 
 function resetProgress() {
@@ -66,7 +115,7 @@ function resetProgress() {
     return
   }
   store.resetProgress()
-  engineRef.value?.loadProfile({ coins: 0, bestScore: 0 })
+  engineRef.value?.loadProfile({ coins: 0, bestScore: 0, modifiers: getRunModifiers(store.upgrades), levelConfig: getLevelConfig(1) })
   resetArmed.value = false
 }
 
@@ -81,12 +130,36 @@ function handleFullscreenKey(event) {
 
 function createTextState(engine) {
   const gameState = JSON.parse(engine.getTextState())
+  const screenDetails = store.screen === 'campaign' ? {
+    chapter: store.selectedChapter,
+    selectedLevel: store.selectedLevel,
+    highestUnlockedLevel: store.campaign.highestUnlockedLevel,
+    visibleLevels: getChapterLevels(store.selectedChapter).map((level) => ({
+      id: level.id,
+      name: level.name,
+      isBoss: level.isBoss,
+      unlocked: level.id <= store.campaign.highestUnlockedLevel,
+      stars: store.campaign.levelRecords[String(level.id)]?.stars || 0,
+    })),
+    availableStarRewards: store.availableStarRewards.map((reward) => reward.id),
+  } : store.screen === 'upgrades' ? {
+    coins: store.currency.coins,
+    refund: store.upgradeRefund,
+    modules: UPGRADE_DEFINITIONS.map((definition) => ({
+      key: definition.key,
+      level: store.upgrades[definition.key],
+      maxLevel: definition.maxLevel,
+      nextCost: getUpgradeCost(definition.key, store.upgrades[definition.key]),
+    })),
+  } : null
   return JSON.stringify({
     ...gameState,
     save: store.saveDebugSummary(),
     ui: {
       primaryAction: primaryLabel.value,
       canReturnToTitle: showReturnButton.value,
+      screen: store.screen,
+      screenDetails,
       saveStatus: saveStatusLabel.value,
     },
   })
@@ -98,6 +171,10 @@ onMounted(() => {
     startingCoins: store.currency.coins,
     startingBestScore: record.value.highScore,
     effectQuality: store.settings.effectQuality,
+    levelConfig: currentLevel.value,
+    modifiers: getRunModifiers(store.upgrades),
+    onOpenCampaign: openCampaign,
+    isInputEnabled: () => ['title', 'game'].includes(store.screen),
   })
   engineRef.value = engine
   engine.start()
@@ -112,9 +189,21 @@ onMounted(() => {
       reload: () => store.hydrateSave(),
       reset: () => {
         const save = store.resetProgress()
-        engine.loadProfile({ coins: 0, bestScore: 0 })
+        engine.loadProfile({ coins: 0, bestScore: 0, modifiers: getRunModifiers(store.upgrades), levelConfig: getLevelConfig(1) })
         return save
       },
+    }
+    window.__NEON_BREAKER_PROGRESSION_TEST__ = {
+      levels: () => LEVELS.map((level) => ({ ...level, layout: [...level.layout] })),
+      openLevel: (levelId) => {
+        const level = getLevelConfig(levelId)
+        if (level.id > store.campaign.highestUnlockedLevel) return false
+        playLevel(level)
+        return true
+      },
+      purchase: (key) => store.purchaseUpgrade(key),
+      resetUpgrades: () => store.resetUpgrades(),
+      claimReward: (id) => store.claimStarReward(id),
     }
   }
 })
@@ -126,6 +215,7 @@ onBeforeUnmount(() => {
   delete window.advanceTime
   delete window.__NEON_BREAKER_TEST__
   delete window.__NEON_BREAKER_SAVE_TEST__
+  delete window.__NEON_BREAKER_PROGRESSION_TEST__
 })
 </script>
 
@@ -135,21 +225,40 @@ onBeforeUnmount(() => {
       <div class="brand-lockup">
         <span class="brand-mark" aria-hidden="true"></span>
         <div>
-          <p>NEON ARCADE / BUILD 0.4</p>
+          <p>NEON ARCADE / BUILD 0.5</p>
           <h1>NEON BREAKER</h1>
         </div>
       </div>
-      <div class="build-status">
-        <span class="live-dot"></span>
-        第一关完整纵切
+      <div class="header-actions">
+        <nav v-if="canNavigate" class="global-nav" aria-label="全局导航">
+          <button type="button" :class="{ active: store.screen === 'title' }" @click="showTitle">标题</button>
+          <button type="button" :class="{ active: store.screen === 'campaign' }" @click="openCampaign">战役</button>
+          <button type="button" :class="{ active: store.screen === 'upgrades' }" @click="openUpgrades">强化</button>
+        </nav>
+        <div class="build-status">
+          <span class="live-dot"></span>
+          永久成长框架
+        </div>
       </div>
     </header>
 
-    <section class="game-layout">
+    <CampaignHub
+      v-if="store.screen === 'campaign'"
+      @play="playLevel"
+      @upgrades="openUpgrades"
+      @title="showTitle"
+    />
+    <UpgradeLab
+      v-if="store.screen === 'upgrades'"
+      @campaign="openCampaign"
+      @title="showTitle"
+    />
+
+    <section v-show="['title', 'game'].includes(store.screen)" class="game-layout">
       <aside class="side-panel mission-panel">
-        <p class="panel-kicker">MISSION 01</p>
-        <h2>{{ LEVEL_ONE.name }}</h2>
-        <p class="chapter-name">CHAPTER 01 / {{ LEVEL_ONE.chapter }}</p>
+        <p class="panel-kicker">MISSION {{ String(currentLevel.id).padStart(2, '0') }}</p>
+        <h2>{{ currentLevel.name }}</h2>
+        <p class="chapter-name">CHAPTER {{ String(currentLevel.chapterId).padStart(2, '0') }} / {{ currentLevel.chapter }}</p>
 
         <div class="record-stars" :aria-label="`历史最高 ${record.stars} 星`">
           <i v-for="star in starSlots" :key="star" :class="{ active: star <= record.stars }">★</i>
@@ -172,7 +281,7 @@ onBeforeUnmount(() => {
         <div class="life-readout">
           <span>剩余生命</span>
           <div aria-label="剩余生命">
-            <i v-for="index in 3" :key="index" :class="{ active: index <= store.lives }"></i>
+            <i v-for="index in store.maxLives" :key="index" :class="{ active: index <= store.lives }"></i>
           </div>
         </div>
 
@@ -208,8 +317,8 @@ onBeforeUnmount(() => {
           <p>三星任务</p>
           <div><i>Ⅰ</i><span>清除全部砖块</span></div>
           <div><i>Ⅱ</i><span>至少剩余 2 条生命</span></div>
-          <div><i>Ⅲ</i><span>{{ LEVEL_ONE.targetScore }} 分或 {{ LEVEL_ONE.targetCombo }} 连击</span></div>
-          <small>清关奖励 ◈ {{ LEVEL_ONE.clearBonus }}</small>
+          <div><i>Ⅲ</i><span>{{ currentLevel.targetScore }} 分或 {{ currentLevel.targetCombo }} 连击</span></div>
+          <small>清关奖励 ◈ {{ currentLevel.clearBonus }}</small>
         </div>
 
         <div v-else-if="isSettlement" class="result-panel" :class="store.mode">
@@ -249,7 +358,7 @@ onBeforeUnmount(() => {
           {{ primaryLabel }}
         </button>
         <button v-if="store.mode === 'playing' && store.activeEffects.some((effect) => effect.type === 'laser')" class="secondary-action" type="button" @click="pauseAction">暂停游戏</button>
-        <button v-if="showReturnButton" data-testid="return-title" class="secondary-action" type="button" @click="returnToTitle">返回标题</button>
+        <button v-if="showReturnButton" data-testid="return-campaign" class="secondary-action" type="button" @click="returnToCampaign">返回战役</button>
         <button class="secondary-action" type="button" @click="toggleFullscreen">全屏显示</button>
 
         <div class="save-readout" :class="store.saveStatus">
@@ -262,7 +371,7 @@ onBeforeUnmount(() => {
       </aside>
     </section>
 
-    <section class="mobile-command-bar">
+    <section v-show="['title', 'game'].includes(store.screen)" class="mobile-command-bar">
       <div>
         <span>♥ {{ store.lives }}</span>
         <strong>{{ store.combo ? `${store.combo} 连击` : modeLabel }}</strong>
@@ -277,7 +386,7 @@ onBeforeUnmount(() => {
       </div>
       <button type="button" @click="primaryAction">{{ primaryLabel }}</button>
       <button v-if="store.mode === 'playing' && store.activeEffects.some((effect) => effect.type === 'laser')" class="mobile-secondary" type="button" @click="pauseAction">暂停游戏</button>
-      <button v-if="showReturnButton" class="mobile-secondary" type="button" @click="returnToTitle">返回标题</button>
+      <button v-if="showReturnButton" class="mobile-secondary" type="button" @click="returnToCampaign">返回战役</button>
       <div v-if="['menu', 'won', 'lost'].includes(store.mode)" class="mobile-save-row" :class="store.saveStatus">
         <span>{{ saveStatusLabel }} · {{ store.totalStars }} / 60 ★</span>
         <button class="mobile-reset-save" :class="{ armed: resetArmed }" type="button" @click="resetProgress">
@@ -286,10 +395,10 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <footer class="game-footer">
-      <span>CAMPAIGN VERTICAL SLICE</span>
-      <p>任务简报 → 发球战斗 → 三星结算 → 正式本地存档</p>
-      <strong>v0.4.0</strong>
+    <footer v-show="['title', 'game'].includes(store.screen)" class="game-footer">
+      <span>CAMPAIGN &amp; PROGRESSION</span>
+      <p>20 关星图 · 7 类永久强化 · 星级奖励 · 数据驱动战斗</p>
+      <strong>v0.5.0</strong>
     </footer>
   </main>
 </template>

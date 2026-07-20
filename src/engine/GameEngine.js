@@ -1,7 +1,7 @@
 import {
   BALL, COLORS, DROP, FIXED_STEP, GAME_HEIGHT, GAME_WIDTH,
   LEVEL_ONE, PADDLE, POWERUPS,
-} from '../config/gameConfig'
+} from '../config/gameConfig.js'
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 const TAU = Math.PI * 2
@@ -16,19 +16,24 @@ function rectCollision(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
 }
 
-function createBricks() {
-  const layout = ['001111100', '011222110', '112111211', '121111121', '112111211', '011222110', '001111100']
-  const usable = GAME_WIDTH - LEVEL_ONE.left * 2 - LEVEL_ONE.gapX * (LEVEL_ONE.columns - 1)
-  const width = usable / LEVEL_ONE.columns
+const DEFAULT_MODIFIERS = {
+  paddleWidthMultiplier: 1, itemDropBonus: 0, coinBonusRate: 0,
+  magnetRangeMultiplier: 1, comboGraceBonus: 0, shieldCharges: 0, extraLives: 0,
+}
+
+function createBricks(levelConfig) {
+  const layout = levelConfig.layout
+  const usable = GAME_WIDTH - levelConfig.left * 2 - levelConfig.gapX * (levelConfig.columns - 1)
+  const width = usable / levelConfig.columns
   const bricks = []
   layout.forEach((row, rowIndex) => [...row].forEach((cell, columnIndex) => {
     const hp = Number(cell)
     if (!hp) return
     bricks.push({
       id: `${rowIndex}-${columnIndex}`,
-      x: LEVEL_ONE.left + columnIndex * (width + LEVEL_ONE.gapX),
-      y: LEVEL_ONE.top + rowIndex * (LEVEL_ONE.brickHeight + LEVEL_ONE.gapY),
-      w: width, h: LEVEL_ONE.brickHeight, hp, maxHp: hp, flash: 0,
+      x: levelConfig.left + columnIndex * (width + levelConfig.gapX),
+      y: levelConfig.top + rowIndex * (levelConfig.brickHeight + levelConfig.gapY),
+      w: width, h: levelConfig.brickHeight, hp, maxHp: hp, flash: 0,
     })
   }))
   return bricks
@@ -40,6 +45,10 @@ export class GameEngine {
     startingCoins = 0,
     startingBestScore = 0,
     effectQuality = 'high',
+    levelConfig = LEVEL_ONE,
+    modifiers = DEFAULT_MODIFIERS,
+    onOpenCampaign,
+    isInputEnabled = () => true,
   } = {}) {
     this.canvas = canvas
     this.ctx = canvas.getContext('2d')
@@ -47,6 +56,11 @@ export class GameEngine {
     this.startingCoins = startingCoins
     this.startingBestScore = startingBestScore
     this.effectQuality = effectQuality
+    this.levelConfig = levelConfig
+    this.modifiers = { ...DEFAULT_MODIFIERS, ...modifiers }
+    this.onOpenCampaign = onOpenCampaign
+    this.isInputEnabled = isInputEnabled
+    this.coinBonusCarry = 0
     this.rafId = null
     this.lastTimestamp = 0
     this.accumulator = 0
@@ -83,14 +97,17 @@ export class GameEngine {
   }
 
   createInitialState() {
+    const basePaddleWidth = PADDLE.width * this.modifiers.paddleWidthMultiplier
+    const maxLives = 3 + this.modifiers.extraLives
     return {
-      mode: 'menu', runId: 0, level: 1, levelName: LEVEL_ONE.name, lives: 3,
+      mode: 'menu', runId: 0, level: this.levelConfig.id, levelName: this.levelConfig.name,
+      lives: maxLives, maxLives, shieldCharges: this.modifiers.shieldCharges,
       score: 0, bestScore: this.startingBestScore || 0, coins: this.startingCoins || 0,
       runStartCoins: this.startingCoins || 0, clearBonus: 0, stars: 0,
       starBreakdown: { clear: false, survivor: false, mastery: false },
       combo: 0, maxCombo: 0, comboTimer: 0, destroyedCount: 0,
-      bricks: createBricks(),
-      paddle: { x: (GAME_WIDTH - PADDLE.width) / 2, y: PADDLE.y, w: PADDLE.width, h: PADDLE.height, velocityX: 0 },
+      bricks: createBricks(this.levelConfig),
+      paddle: { x: (GAME_WIDTH - basePaddleWidth) / 2, y: PADDLE.y, w: basePaddleWidth, h: PADDLE.height, velocityX: 0 },
       balls: [], drops: [], message: '准备进入霓虹试炼', laserCooldown: 0,
       resumeCountdown: 0,
       powerups: {
@@ -130,6 +147,7 @@ export class GameEngine {
     this.startingCoins = coins
     this.startingBestScore = bestScore
     this.state = this.createInitialState()
+    this.coinBonusCarry = 0
     this.state.runId = this.nextRunId++
     this.state.runStartCoins = coins
     this.state.mode = 'ready'
@@ -150,6 +168,22 @@ export class GameEngine {
     this.touchState(); this.publish(true); this.render()
   }
 
+  configureLevel(levelConfig, { coins = this.state.coins, bestScore = 0, modifiers = this.modifiers } = {}) {
+    this.levelConfig = levelConfig || LEVEL_ONE
+    this.modifiers = { ...DEFAULT_MODIFIERS, ...modifiers }
+    this.startingCoins = coins
+    this.startingBestScore = bestScore
+    this.state = this.createInitialState()
+    this.state.mode = 'briefing'
+    this.state.message = '确认任务目标后开始挑战'
+    this.clearTransientEffects()
+    this.touchState(); this.publish(true); this.render()
+  }
+
+  requestCampaign() {
+    this.onOpenCampaign?.()
+  }
+
   returnToMenu() {
     const { bestScore, coins } = this.state
     this.startingCoins = coins
@@ -160,9 +194,11 @@ export class GameEngine {
     this.touchState(); this.publish(true); this.render()
   }
 
-  loadProfile({ coins = 0, bestScore = 0 } = {}) {
+  loadProfile({ coins = 0, bestScore = 0, modifiers = this.modifiers, levelConfig = this.levelConfig } = {}) {
     this.startingCoins = coins
     this.startingBestScore = bestScore
+    this.modifiers = { ...DEFAULT_MODIFIERS, ...modifiers }
+    this.levelConfig = levelConfig || LEVEL_ONE
     this.state = this.createInitialState()
     this.clearTransientEffects()
     this.touchState(); this.publish(true); this.render()
@@ -179,7 +215,7 @@ export class GameEngine {
   }
 
   newBall(x, y, vx = 0, vy = 0, stuck = false) {
-    return { id: this.nextBallId++, x, y, vx, vy, r: BALL.radius, stuck, lastHitBrickId: null, brickHitCooldown: 0 }
+    return { id: this.nextBallId++, x, y, vx, vy, r: BALL.radius, stuck, lastHitBrickId: null, brickHitCooldown: 0, stallTimer: 0 }
   }
 
   spawnAttachedBall() {
@@ -192,8 +228,9 @@ export class GameEngine {
     const ball = this.state.balls[0]
     if (!ball) return
     const direction = this.state.paddle.x + this.state.paddle.w / 2 < GAME_WIDTH / 2 ? 1 : -1
-    ball.vx = 0.58 * BALL.launchSpeed * direction
-    ball.vy = -Math.sqrt(BALL.launchSpeed ** 2 - ball.vx ** 2)
+    const launchSpeed = BALL.launchSpeed * this.levelConfig.ballSpeedMultiplier
+    ball.vx = 0.58 * launchSpeed * direction
+    ball.vy = -Math.sqrt(launchSpeed ** 2 - ball.vx ** 2)
     ball.stuck = false
     this.state.mode = 'playing'
     this.state.message = '连击砖块，接住能量胶囊'
@@ -256,10 +293,16 @@ export class GameEngine {
 
   handleKeyDown(event) {
     const key = event.key.toLowerCase()
+    if (!this.isInputEnabled()) {
+      this.keys.clear()
+      return
+    }
+    const interactiveTarget = event.target?.closest?.('button, input, select, textarea, a, [role="button"], [contenteditable="true"]')
+    if (interactiveTarget && [' ', 'enter'].includes(key)) return
     if (['arrowleft', 'arrowright', 'a', 'd', ' ', 'enter'].includes(key)) event.preventDefault()
     this.keys.add(key)
     if (key === ' ' || key === 'enter') {
-      if (this.state.mode === 'menu') this.openBriefing()
+      if (this.state.mode === 'menu') this.requestCampaign()
       else if (this.state.mode === 'briefing') this.startNewGame()
       else if (['won', 'lost'].includes(this.state.mode)) this.startNewGame()
       else if (this.state.mode === 'ready') this.launch()
@@ -278,7 +321,7 @@ export class GameEngine {
   handlePointerDown(event) {
     this.canvas.setPointerCapture?.(event.pointerId)
     this.pointerTargetX = this.canvasPoint(event).x
-    if (this.state.mode === 'menu') this.openBriefing()
+    if (this.state.mode === 'menu') this.requestCampaign()
     else if (this.state.mode === 'briefing') this.startNewGame()
     else if (['won', 'lost'].includes(this.state.mode)) this.startNewGame()
     else if (this.state.mode === 'ready') this.launch()
@@ -367,6 +410,8 @@ export class GameEngine {
       const previousX = ball.x
       const previousY = ball.y
       ball.brickHitCooldown = Math.max(0, ball.brickHitCooldown - dt)
+      ball.stallTimer += dt
+      if (ball.stallTimer >= 7) this.breakBallLoop(ball)
       ball.x += ball.vx * dt * slowFactor
       ball.y += ball.vy * dt * slowFactor
       if (ball.x - ball.r <= 14 && ball.vx < 0) { ball.x = 14 + ball.r; ball.vx = Math.abs(ball.vx); this.spawnImpact(ball.x, ball.y, COLORS.cyan, 3) }
@@ -403,6 +448,7 @@ export class GameEngine {
       if (!piercing) this.resolveBrickBounce(ball, brick, previousX, previousY)
       ball.lastHitBrickId = brick.id
       ball.brickHitCooldown = piercing ? 0.025 : 0.055
+      ball.stallTimer = 0
       this.damageBrick(brick, ball.x, ball.y, 'ball')
       if (!piercing) break
     }
@@ -424,13 +470,30 @@ export class GameEngine {
     }
   }
 
+  breakBallLoop(ball) {
+    const rotation = ball.id % 2 ? 0.19 : -0.19
+    const cos = Math.cos(rotation); const sin = Math.sin(rotation)
+    const vx = ball.vx * cos - ball.vy * sin
+    const vy = ball.vx * sin + ball.vy * cos
+    const speed = Math.hypot(vx, vy)
+    ball.vx = vx
+    ball.vy = Math.abs(vy) < BALL.minVerticalSpeed
+      ? Math.sign(vy || -1) * BALL.minVerticalSpeed
+      : vy
+    const adjustedSpeed = Math.hypot(ball.vx, ball.vy)
+    ball.vx *= speed / adjustedSpeed
+    ball.vy *= speed / adjustedSpeed
+    ball.stallTimer = 0
+    this.spawnImpact(ball.x, ball.y, this.levelConfig.accent, 4)
+  }
+
   damageBrick(brick, x, y, source) {
     if (brick.hp <= 0) return
     brick.hp -= 1
     brick.flash = 0.14
     const destroyed = brick.hp === 0
     this.state.combo += 1
-    this.state.comboTimer = 2.4
+    this.state.comboTimer = this.comboWindow()
     this.state.maxCombo = Math.max(this.state.maxCombo, this.state.combo)
     const multiplier = 1 + Math.min(2, Math.floor(this.state.combo / 5) * 0.25)
     const points = Math.round((destroyed ? 180 : 90) * multiplier)
@@ -469,7 +532,7 @@ export class GameEngine {
       if (effect.remaining <= 0) continue
       effect.remaining = Math.max(0, effect.remaining - dt)
       if (effect.remaining === 0) {
-        if (type === 'expand') { effect.stacks = 0; this.resizePaddle(PADDLE.width) }
+        if (type === 'expand') { effect.stacks = 0; this.resizePaddle(this.basePaddleWidth()) }
         this.state.message = `${POWERUPS[type].name}已结束`
         this.touchState()
       }
@@ -486,7 +549,7 @@ export class GameEngine {
       effect.remaining = config.duration
       if (type === 'expand') {
         effect.stacks = Math.min(2, effect.stacks + 1)
-        this.resizePaddle(PADDLE.width * (1 + effect.stacks * 0.22))
+        this.resizePaddle(this.basePaddleWidth() * (1 + effect.stacks * 0.22))
       }
     }
     this.state.message = `${config.name} · 已激活`
@@ -501,6 +564,9 @@ export class GameEngine {
     this.state.paddle.w = width
     this.state.paddle.x = clamp(center - width / 2, 18, GAME_WIDTH - 18 - width)
   }
+
+  basePaddleWidth() { return PADDLE.width * this.modifiers.paddleWidthMultiplier }
+  comboWindow() { return 2.4 + this.modifiers.comboGraceBonus }
 
   activateMultiball() {
     const originals = this.state.balls.filter((ball) => !ball.stuck)
@@ -527,7 +593,7 @@ export class GameEngine {
       const amount = roll < 0.12 ? 3 : roll < 0.35 ? 2 : 1
       for (let i = 0; i < amount; i += 1) this.spawnCoin(x, y, i, amount)
     }
-    if (this.state.destroyedCount % 5 === 0 || this.random() < 0.12) {
+    if (this.state.destroyedCount % 5 === 0 || this.random() < 0.12 + this.modifiers.itemDropBonus) {
       const types = Object.keys(POWERUPS)
       this.spawnItem(types[Math.floor(this.random() * types.length)], x, y)
     }
@@ -557,8 +623,9 @@ export class GameEngine {
         const targetY = paddle.y + paddle.h / 2
         const dx = targetX - drop.x; const dy = targetY - drop.y
         const distance = Math.hypot(dx, dy)
-        if (distance < DROP.magnetRange && distance > 1) {
-          const pull = (1 - distance / DROP.magnetRange) * 1450
+        const magnetRange = DROP.magnetRange * this.modifiers.magnetRangeMultiplier
+        if (distance < magnetRange && distance > 1) {
+          const pull = (1 - distance / magnetRange) * 1450
           drop.vx += dx / distance * pull * dt
           drop.vy += dy / distance * pull * dt
         } else drop.vy += DROP.coinGravity * dt
@@ -580,10 +647,14 @@ export class GameEngine {
   }
 
   collectCoin(drop) {
-    this.state.coins += 1
-    this.floaters.push({ x: drop.x, y: paddleTop(this.state.paddle), text: '+1 ◈', life: 0.8, color: COLORS.gold })
+    this.coinBonusCarry += this.modifiers.coinBonusRate
+    const bonus = Math.floor(this.coinBonusCarry + 1e-9)
+    const amount = 1 + bonus
+    this.coinBonusCarry = Math.max(0, this.coinBonusCarry - bonus)
+    this.state.coins += amount
+    this.floaters.push({ x: drop.x, y: paddleTop(this.state.paddle), text: `+${amount} ◈`, life: 0.8, color: COLORS.gold })
     this.spawnBurst(drop.x, drop.y, COLORS.gold, 10)
-    this.state.message = `晶币 +1 · 本地持有 ${this.state.coins}`
+    this.state.message = `晶币 +${amount} · 本地持有 ${this.state.coins}`
     this.touchState()
   }
 
@@ -601,15 +672,23 @@ export class GameEngine {
   }
 
   loseBall() {
-    this.state.lives -= 1
     this.state.combo = 0; this.state.comboTimer = 0
     this.state.drops = []; this.projectiles = []
     for (const type of ['expand', 'pierce', 'slow', 'laser']) {
       this.state.powerups[type].remaining = 0
       if (type === 'expand') this.state.powerups[type].stacks = 0
     }
-    this.resizePaddle(PADDLE.width)
+    this.resizePaddle(this.basePaddleWidth())
     this.trail.length = 0; this.shake = 6; this.touchState()
+    if (this.state.shieldCharges > 0) {
+      this.state.shieldCharges -= 1
+      this.state.mode = 'ready'
+      this.state.message = `能量护盾抵挡掉球 · 剩余 ${this.state.shieldCharges}`
+      this.spawnAttachedBall()
+      this.publish(true)
+      return
+    }
+    this.state.lives -= 1
     if (this.state.lives <= 0) {
       this.state.balls = []; this.state.mode = 'lost'; this.state.message = '光能耗尽 · 本局收益已保存'
       this.state.stars = 0
@@ -625,12 +704,12 @@ export class GameEngine {
     const starBreakdown = {
       clear: true,
       survivor: this.state.lives >= 2,
-      mastery: this.state.score >= LEVEL_ONE.targetScore || this.state.maxCombo >= LEVEL_ONE.targetCombo,
+      mastery: this.state.score >= this.levelConfig.targetScore || this.state.maxCombo >= this.levelConfig.targetCombo,
     }
     this.state.stars = Object.values(starBreakdown).filter(Boolean).length
     this.state.starBreakdown = starBreakdown
-    this.state.clearBonus = LEVEL_ONE.clearBonus
-    this.state.coins += LEVEL_ONE.clearBonus
+    this.state.clearBonus = Math.round(this.levelConfig.clearBonus * (1 + this.modifiers.coinBonusRate))
+    this.state.coins += this.state.clearBonus
     this.state.balls = []
     this.state.mode = 'won'; this.state.message = `任务完成 · ${this.state.stars} 星评价`
     this.state.combo = 0; this.state.comboTimer = 0
@@ -639,7 +718,7 @@ export class GameEngine {
       this.state.powerups[type].remaining = 0
       if (type === 'expand') this.state.powerups[type].stacks = 0
     }
-    this.resizePaddle(PADDLE.width)
+    this.resizePaddle(this.basePaddleWidth())
     this.state.bestScore = Math.max(this.state.bestScore, this.state.score)
     this.shake = 8; this.flash = 0.35
     this.spawnBurst(GAME_WIDTH / 2, 400, COLORS.gold, 90)
@@ -699,7 +778,8 @@ export class GameEngine {
   getSummary() {
     return {
       mode: this.state.mode, runId: this.state.runId, level: this.state.level, levelName: this.state.levelName,
-      lives: this.state.lives, score: this.state.score, bestScore: this.state.bestScore,
+      lives: this.state.lives, maxLives: this.state.maxLives, shieldCharges: this.state.shieldCharges,
+      score: this.state.score, bestScore: this.state.bestScore,
       coins: this.state.coins,
       runCoinsEarned: Math.max(0, this.state.coins - this.state.runStartCoins),
       clearBonus: this.state.clearBonus,
@@ -710,6 +790,11 @@ export class GameEngine {
       activeEffects: this.activeEffects(), bricksRemaining: this.remainingBricks(),
       totalBricks: this.state.bricks.length, message: this.state.message,
       resumeCountdown: Number(this.state.resumeCountdown.toFixed(1)),
+      levelMeta: {
+        chapter: this.levelConfig.chapter, accent: this.levelConfig.accent, isBoss: this.levelConfig.isBoss,
+        targetScore: this.levelConfig.targetScore, targetCombo: this.levelConfig.targetCombo,
+      },
+      runModifiers: { ...this.modifiers },
     }
   }
 
@@ -720,10 +805,13 @@ export class GameEngine {
       level: {
         id: this.state.level,
         name: this.state.levelName,
-        targetScore: LEVEL_ONE.targetScore,
-        targetCombo: LEVEL_ONE.targetCombo,
+        chapter: this.levelConfig.chapter,
+        isBoss: this.levelConfig.isBoss,
+        targetScore: this.levelConfig.targetScore,
+        targetCombo: this.levelConfig.targetCombo,
       },
-      lives: this.state.lives, score: this.state.score, coins: this.state.coins,
+      lives: this.state.lives, maxLives: this.state.maxLives, shieldCharges: this.state.shieldCharges,
+      score: this.state.score, coins: this.state.coins,
       runCoinsEarned: Math.max(0, this.state.coins - this.state.runStartCoins),
       settlement: {
         stars: this.state.stars,
@@ -733,20 +821,21 @@ export class GameEngine {
       combo: this.state.combo, maxCombo: this.state.maxCombo, message: this.state.message,
       resumeCountdown: Number(this.state.resumeCountdown.toFixed(1)),
       paddle: { x: +this.state.paddle.x.toFixed(1), y: this.state.paddle.y, width: +this.state.paddle.w.toFixed(1), velocityX: +this.state.paddle.velocityX.toFixed(1) },
-      balls: this.state.balls.map((ball) => ({ id: ball.id, x: +ball.x.toFixed(1), y: +ball.y.toFixed(1), vx: +ball.vx.toFixed(1), vy: +ball.vy.toFixed(1), radius: ball.r, stuck: ball.stuck })),
+      balls: this.state.balls.map((ball) => ({ id: ball.id, x: +ball.x.toFixed(1), y: +ball.y.toFixed(1), vx: +ball.vx.toFixed(1), vy: +ball.vy.toFixed(1), radius: ball.r, stuck: ball.stuck, stallTimer: +ball.stallTimer.toFixed(1) })),
       bricks: this.state.bricks.filter((brick) => brick.hp > 0).map((brick) => ({ id: brick.id, x: +brick.x.toFixed(1), y: brick.y, width: +brick.w.toFixed(1), height: brick.h, hp: brick.hp, maxHp: brick.maxHp })),
       drops: this.state.drops.map((drop) => ({ kind: drop.kind, type: drop.type || 'coin', x: +drop.x.toFixed(1), y: +drop.y.toFixed(1) })),
       projectiles: this.projectiles.length, activeEffects: this.activeEffects(),
       bricksRemaining: this.remainingBricks(), totalBricks: this.state.bricks.length,
       effects: { particles: this.particles.length, pool: this.particlePool.length, waves: this.waves.length, trailPoints: this.trail.length, shake: +this.shake.toFixed(1) },
+      runModifiers: { ...this.modifiers },
       availableActions: this.availableActions(),
     })
   }
 
   availableActions() {
-    if (this.state.mode === 'menu') return ['open mission briefing', 'F fullscreen']
-    if (this.state.mode === 'briefing') return ['start level', 'return to title', 'F fullscreen']
-    if (['won', 'lost'].includes(this.state.mode)) return ['retry level', 'return to title', 'F fullscreen']
+    if (this.state.mode === 'menu') return ['open campaign', 'F fullscreen']
+    if (this.state.mode === 'briefing') return ['start level', 'return to campaign', 'F fullscreen']
+    if (['won', 'lost'].includes(this.state.mode)) return ['retry level', 'return to campaign', 'F fullscreen']
     if (this.state.mode === 'ready') return ['move paddle', 'launch with click/Space', 'F fullscreen']
     if (this.state.mode === 'paused') return ['resume with 3-second countdown', 'F fullscreen']
     if (this.state.mode === 'countdown') return ['wait for countdown', 'cancel resume with click/Space/P', 'F fullscreen']
@@ -775,23 +864,23 @@ export class GameEngine {
     ctx.strokeStyle = 'rgba(85,244,221,.055)'; ctx.lineWidth = 1
     for (let x = 14; x < GAME_WIDTH; x += 44) { ctx.beginPath(); ctx.moveTo(x, 108); ctx.lineTo(x, GAME_HEIGHT); ctx.stroke() }
     for (let y = 112; y < GAME_HEIGHT; y += 44) { ctx.beginPath(); ctx.moveTo(14, y); ctx.lineTo(GAME_WIDTH - 14, y); ctx.stroke() }
-    ctx.strokeStyle = 'rgba(85,244,221,.22)'; ctx.lineWidth = 2; ctx.strokeRect(14, 112, GAME_WIDTH - 28, GAME_HEIGHT - 128)
+    ctx.strokeStyle = this.levelConfig.accent; ctx.globalAlpha = .28; ctx.lineWidth = 2; ctx.strokeRect(14, 112, GAME_WIDTH - 28, GAME_HEIGHT - 128); ctx.globalAlpha = 1
   }
 
   drawHud(ctx) {
     ctx.fillStyle = 'rgba(8,20,31,.94)'; ctx.fillRect(0, 0, GAME_WIDTH, 112)
     ctx.textAlign = 'left'; ctx.fillStyle = COLORS.cyan; ctx.font = '800 14px system-ui'; ctx.fillText('NEON BREAKER', 24, 27)
     ctx.fillStyle = COLORS.text; ctx.font = '800 24px system-ui'; ctx.fillText(String(this.state.score).padStart(6, '0'), 24, 62)
-    ctx.fillStyle = COLORS.muted; ctx.font = '600 11px system-ui'; ctx.fillText(`LV 01 · ${this.remainingBricks()} BRICKS`, 24, 88)
+    ctx.fillStyle = COLORS.muted; ctx.font = '600 11px system-ui'; ctx.fillText(`LV ${String(this.state.level).padStart(2, '0')} · ${this.remainingBricks()} BRICKS`, 24, 88)
     if (this.state.combo > 1) {
       ctx.textAlign = 'center'; ctx.fillStyle = this.state.combo >= 10 ? COLORS.gold : COLORS.magenta
       ctx.font = `900 ${Math.min(26, 17 + this.state.combo / 3)}px system-ui`; ctx.fillText(`${this.state.combo} COMBO`, GAME_WIDTH / 2, 50)
       ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.fillRect(GAME_WIDTH / 2 - 58, 64, 116, 3)
-      ctx.fillStyle = COLORS.magenta; ctx.fillRect(GAME_WIDTH / 2 - 58, 64, 116 * clamp(this.state.comboTimer / 2.4, 0, 1), 3)
+      ctx.fillStyle = COLORS.magenta; ctx.fillRect(GAME_WIDTH / 2 - 58, 64, 116 * clamp(this.state.comboTimer / this.comboWindow(), 0, 1), 3)
     }
     ctx.textAlign = 'right'; ctx.fillStyle = COLORS.gold; ctx.font = '800 13px system-ui'; ctx.fillText(`◈ ${this.state.coins}`, GAME_WIDTH - 24, 28)
     ctx.fillStyle = COLORS.muted; ctx.font = '600 11px system-ui'; ctx.fillText(`${this.state.balls.length} BALL`, GAME_WIDTH - 24, 88)
-    for (let i = 0; i < 3; i += 1) {
+    for (let i = 0; i < this.state.maxLives; i += 1) {
       const x = GAME_WIDTH - 30 - i * 27
       ctx.save(); ctx.shadowColor = i < this.state.lives ? COLORS.magenta : 'transparent'; ctx.shadowBlur = 12
       ctx.fillStyle = i < this.state.lives ? COLORS.magenta : 'rgba(117,148,157,.18)'; ctx.beginPath(); ctx.arc(x, 56, 8, 0, TAU); ctx.fill(); ctx.restore()
@@ -802,13 +891,13 @@ export class GameEngine {
     for (const brick of this.state.bricks) {
       if (brick.hp <= 0) continue
       const reinforced = brick.maxHp > 1
-      ctx.save(); ctx.shadowColor = reinforced ? COLORS.purple : COLORS.cyan; ctx.shadowBlur = brick.flash > 0 ? 26 : 10
-      ctx.fillStyle = brick.flash > 0 ? '#fff' : reinforced ? COLORS.purple : COLORS.cyanSoft
+      ctx.save(); ctx.shadowColor = reinforced ? COLORS.purple : this.levelConfig.accent; ctx.shadowBlur = brick.flash > 0 ? 26 : 10
+      ctx.fillStyle = brick.flash > 0 ? '#fff' : reinforced ? COLORS.purple : this.levelConfig.accent
       ctx.beginPath(); ctx.roundRect(brick.x, brick.y, brick.w, brick.h, 7); ctx.fill()
       ctx.strokeStyle = reinforced ? '#e0c5ff' : 'rgba(211,255,248,.68)'; ctx.lineWidth = reinforced ? 2 : 1; ctx.stroke()
       if (reinforced) {
         ctx.shadowBlur = 0; ctx.fillStyle = 'rgba(15,10,35,.7)'; ctx.fillRect(brick.x + 9, brick.y + brick.h / 2 - 1, brick.w - 18, 2)
-        for (let i = 0; i < brick.maxHp; i += 1) { ctx.fillStyle = i < brick.hp ? COLORS.gold : 'rgba(255,255,255,.16)'; ctx.beginPath(); ctx.arc(brick.x + brick.w / 2 + (i - .5) * 10, brick.y + brick.h / 2, 3, 0, TAU); ctx.fill() }
+        for (let i = 0; i < brick.maxHp; i += 1) { ctx.fillStyle = i < brick.hp ? COLORS.gold : 'rgba(255,255,255,.16)'; ctx.beginPath(); ctx.arc(brick.x + brick.w / 2 + (i - (brick.maxHp - 1) / 2) * 10, brick.y + brick.h / 2, 3, 0, TAU); ctx.fill() }
       }
       ctx.restore()
     }
@@ -891,22 +980,22 @@ export class GameEngine {
     }
     ctx.fillStyle = 'rgba(4,9,18,.82)'; ctx.fillRect(14, 112, GAME_WIDTH - 28, GAME_HEIGHT - 128); ctx.textAlign = 'center'
     if (mode === 'menu') {
-      ctx.fillStyle = COLORS.cyan; ctx.font = '800 14px system-ui'; ctx.fillText('CAMPAIGN / CHAPTER 01', GAME_WIDTH / 2, 252)
+      ctx.fillStyle = COLORS.cyan; ctx.font = '800 14px system-ui'; ctx.fillText('CAMPAIGN / 20 MISSIONS', GAME_WIDTH / 2, 252)
       ctx.fillStyle = COLORS.text; ctx.font = '900 48px system-ui'; ctx.fillText('NEON', GAME_WIDTH / 2, 326); ctx.fillText('BREAKER', GAME_WIDTH / 2, 379)
       ctx.fillStyle = COLORS.muted; ctx.font = '600 15px system-ui'; ctx.fillText('原创霓虹街机 · 本地单机存档', GAME_WIDTH / 2, 423)
       ctx.strokeStyle = 'rgba(85,244,221,.18)'; ctx.beginPath(); ctx.moveTo(142, 472); ctx.lineTo(GAME_WIDTH - 142, 472); ctx.stroke()
       ctx.fillStyle = COLORS.gold; ctx.font = '800 13px system-ui'; ctx.fillText(`◈ ${this.state.coins} 晶币已同步`, GAME_WIDTH / 2, 507)
-      this.drawOverlayButton(ctx, '进入任务', 632)
+      this.drawOverlayButton(ctx, '进入战役', 632)
       ctx.fillStyle = COLORS.muted; ctx.font = '500 12px system-ui'; ctx.fillText('点击战场或按 ENTER', GAME_WIDTH / 2, 718)
     } else if (mode === 'briefing') {
-      ctx.fillStyle = COLORS.cyan; ctx.font = '900 13px system-ui'; ctx.fillText('MISSION BRIEFING', GAME_WIDTH / 2, 208)
-      ctx.fillStyle = COLORS.text; ctx.font = '900 34px system-ui'; ctx.fillText('01 · 初次折射', GAME_WIDTH / 2, 260)
-      ctx.fillStyle = COLORS.muted; ctx.font = '500 13px system-ui'; ctx.fillText('击碎棱镜阵列，掌握反弹与能量模块', GAME_WIDTH / 2, 292)
+      ctx.fillStyle = this.levelConfig.accent; ctx.font = '900 13px system-ui'; ctx.fillText(`${this.levelConfig.chapterCodename} / MISSION BRIEFING`, GAME_WIDTH / 2, 208)
+      ctx.fillStyle = COLORS.text; ctx.font = '900 34px system-ui'; ctx.fillText(`${String(this.state.level).padStart(2, '0')} · ${this.state.levelName}`, GAME_WIDTH / 2, 260)
+      ctx.fillStyle = COLORS.muted; ctx.font = '500 12px system-ui'; ctx.fillText(this.levelConfig.isBoss ? '守关核心预备战 · 高额清关奖励' : this.levelConfig.chapter, GAME_WIDTH / 2, 292)
 
       const criteria = [
         ['Ⅰ', '完成关卡', '清除全部砖块', COLORS.cyan],
         ['Ⅱ', '保持能量', '剩余至少 2 条生命', COLORS.magenta],
-        ['Ⅲ', '达成精通', `${LEVEL_ONE.targetScore} 分或 ${LEVEL_ONE.targetCombo} 连击`, COLORS.gold],
+        ['Ⅲ', '达成精通', `${this.levelConfig.targetScore} 分或 ${this.levelConfig.targetCombo} 连击`, COLORS.gold],
       ]
       criteria.forEach(([number, title, detail, color], index) => {
         const y = 346 + index * 78
@@ -917,7 +1006,7 @@ export class GameEngine {
         ctx.fillStyle = COLORS.muted; ctx.font = '500 11px system-ui'; ctx.fillText(detail, 132, y + 43)
       })
       ctx.textAlign = 'center'; this.drawOverlayButton(ctx, '开始挑战', 626)
-      ctx.fillStyle = COLORS.muted; ctx.font = '500 12px system-ui'; ctx.fillText('3 条生命 · 通关奖励 20 晶币', GAME_WIDTH / 2, 714)
+      ctx.fillStyle = COLORS.muted; ctx.font = '500 12px system-ui'; ctx.fillText(`${this.state.maxLives} 条生命 · 通关奖励 ${Math.round(this.levelConfig.clearBonus * (1 + this.modifiers.coinBonusRate))} 晶币`, GAME_WIDTH / 2, 714)
     } else if (mode === 'paused') {
       ctx.fillStyle = COLORS.text; ctx.font = '900 40px system-ui'; ctx.fillText('已暂停', GAME_WIDTH / 2, 418)
       ctx.fillStyle = COLORS.muted; ctx.font = '500 15px system-ui'; ctx.fillText('点击、空格或 P 启动恢复倒计时', GAME_WIDTH / 2, 456)
@@ -938,7 +1027,7 @@ export class GameEngine {
     ctx.font = '900 13px system-ui'
     ctx.fillText(won ? 'MISSION COMPLETE' : 'MISSION FAILED', GAME_WIDTH / 2, 208)
     ctx.fillStyle = COLORS.text; ctx.font = '900 31px system-ui'
-    ctx.fillText(won ? '初次折射 · 已完成' : '能量耗尽', GAME_WIDTH / 2, 256)
+    ctx.fillText(won ? `${this.state.levelName} · 已完成` : `${this.state.levelName} · 能量耗尽`, GAME_WIDTH / 2, 256)
 
     for (let index = 0; index < 3; index += 1) {
       this.drawStarIcon(ctx, GAME_WIDTH / 2 + (index - 1) * 66, 322, 24, won && index < this.state.stars)
@@ -968,7 +1057,7 @@ export class GameEngine {
       ctx.fillStyle = COLORS.muted; ctx.font = '600 12px system-ui'; ctx.fillText('已获得晶币和最高记录均已保存', GAME_WIDTH / 2, 596)
     }
     this.drawOverlayButton(ctx, won ? '再次挑战' : '重新挑战', 650)
-    ctx.fillStyle = COLORS.muted; ctx.font = '500 11px system-ui'; ctx.fillText('可从右侧操作终端返回标题', GAME_WIDTH / 2, 738)
+    ctx.fillStyle = COLORS.muted; ctx.font = '500 11px system-ui'; ctx.fillText('可从操作终端返回战役大厅', GAME_WIDTH / 2, 738)
   }
 
   drawStarIcon(ctx, x, y, radius, active) {

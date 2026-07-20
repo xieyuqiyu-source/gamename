@@ -44,22 +44,7 @@ export const DROP = {
   maxDrops: 28,
 }
 
-export const LEVEL_ONE = {
-  id: 1,
-  name: '初次折射',
-  chapter: '霓虹启程',
-  description: '击碎棱镜阵列，熟悉反弹、连击与能量模块。',
-  targetScore: 15000,
-  targetCombo: 35,
-  clearBonus: 20,
-  columns: 9,
-  rows: 7,
-  left: 34,
-  top: 178,
-  gapX: 6,
-  gapY: 9,
-  brickHeight: 28,
-}
+export { LEVEL_ONE } from './levels.js'
 
 export const MODE_LABELS = {
   menu: '等待开始',
