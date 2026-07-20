@@ -35,6 +35,19 @@ test('升级购买扣款、持久化并可全额退款', () => {
   assert.equal(store.upgrades.paddleWidth, 0)
 })
 
+test('画面设置即时写入 v3 正式存档', () => {
+  const store = createStore(20)
+  const settings = store.updateSettings({ effectQuality: 'medium', screenShake: false, reducedFlash: true })
+  const saved = JSON.parse(window.localStorage.getItem('gamename:save'))
+
+  assert.deepEqual(settings, {
+    effectQuality: 'medium', screenShake: false, reducedFlash: true, controlMode: 'auto',
+  })
+  assert.equal(saved.saveVersion, 3)
+  assert.deepEqual(saved.settings, settings)
+  assert.equal(store.savePersistence, 'local')
+})
+
 test('晶币不足、锁定关卡和星级奖励规则正确', () => {
   const store = createStore(0)
   assert.equal(store.purchaseUpgrade('extraLife').reason, 'coins')

@@ -3,6 +3,7 @@ import {
   LEVEL_ONE, PADDLE, POWERUPS,
 } from '../config/gameConfig.js'
 import { getEndlessLevelConfig } from '../config/levels.js'
+import { getEffectProfile, resolveEffectQuality } from '../config/visualSettings.js'
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 const TAU = Math.PI * 2
@@ -100,6 +101,8 @@ export class GameEngine {
     startingCoins = 0,
     startingBestScore = 0,
     effectQuality = 'high',
+    screenShake = true,
+    reducedFlash = false,
     levelConfig = LEVEL_ONE,
     modifiers = DEFAULT_MODIFIERS,
     onOpenCampaign,
@@ -110,7 +113,10 @@ export class GameEngine {
     this.onStateChange = onStateChange
     this.startingCoins = startingCoins
     this.startingBestScore = startingBestScore
-    this.effectQuality = effectQuality
+    this.effectQuality = resolveEffectQuality(effectQuality)
+    this.effectProfile = getEffectProfile(this.effectQuality)
+    this.screenShake = screenShake !== false
+    this.reducedFlash = Boolean(reducedFlash)
     this.levelConfig = levelConfig
     this.modifiers = { ...DEFAULT_MODIFIERS, ...modifiers }
     this.onOpenCampaign = onOpenCampaign
@@ -251,6 +257,24 @@ export class GameEngine {
   configureEndless({ wave = 1, coins = this.state.coins, bestScore = 0, modifiers = this.modifiers } = {}) {
     this.endlessStartWave = Math.max(1, Math.floor(Number(wave) || 1))
     this.configureLevel(getEndlessLevelConfig(this.endlessStartWave), { coins, bestScore, modifiers })
+  }
+
+  configureVisualSettings({ effectQuality = this.effectQuality, screenShake = this.screenShake, reducedFlash = this.reducedFlash } = {}) {
+    this.effectQuality = resolveEffectQuality(effectQuality)
+    this.effectProfile = getEffectProfile(this.effectQuality)
+    this.screenShake = screenShake !== false
+    this.reducedFlash = Boolean(reducedFlash)
+    if (!this.screenShake) this.shake = 0
+    if (this.reducedFlash) this.flash = Math.min(this.flash, 0.12)
+    if (this.particles.length > this.effectProfile.particleLimit) {
+      const excess = this.particles.splice(0, this.particles.length - this.effectProfile.particleLimit)
+      this.particlePool.push(...excess)
+    }
+    this.trail = this.trail.slice(-this.effectProfile.trailLimit)
+    this.waves = this.waves.slice(-this.effectProfile.waveLimit)
+    this.floaters = this.floaters.slice(-this.effectProfile.floaterLimit)
+    this.touchState(); this.publish(true); this.render()
+    return { ...this.effectProfile, screenShake: this.screenShake, reducedFlash: this.reducedFlash }
   }
 
   requestCampaign() {
@@ -525,7 +549,10 @@ export class GameEngine {
       if (this.state.mode !== 'playing') break
       if (ball.y - ball.r <= GAME_HEIGHT) {
         surviving.push(ball)
-        if (this.state.mode === 'playing') this.trail.push({ id: ball.id, x: ball.x, y: ball.y, life: 0.24 })
+        if (this.state.mode === 'playing') {
+          this.trail.push({ id: ball.id, x: ball.x, y: ball.y, life: 0.24 })
+          if (this.trail.length > this.effectProfile.trailLimit) this.trail.splice(0, this.trail.length - this.effectProfile.trailLimit)
+        }
       }
     }
     this.state.balls = this.state.mode === 'playing' ? surviving : []
@@ -1057,7 +1084,7 @@ export class GameEngine {
     const additions = []
     for (const ball of originals) {
       for (const rotation of [-0.38, 0.38]) {
-        if (this.state.balls.length + additions.length >= 12) break
+        if (this.state.balls.length + additions.length >= BALL.maxCount) break
         additions.push(this.rotatedBall(ball, rotation))
       }
     }
@@ -1225,7 +1252,7 @@ export class GameEngine {
   remainingBricks() { return this.state.bricks.filter((brick) => brick.hp > 0).length }
   spawnImpact(x, y, color, count) { this.spawnBurst(x, y, color, count) }
   spawnBurst(x, y, color, count) {
-    const actualCount = this.effectQuality === 'low' ? Math.max(2, Math.ceil(count * 0.42)) : count
+    const actualCount = Math.max(2, Math.ceil(count * this.effectProfile.particleMultiplier))
     for (let i = 0; i < actualCount; i += 1) {
       const angle = TAU * i / Math.max(1, actualCount) + Math.random() * 0.6
       const speed = 45 + Math.random() * 180
@@ -1233,7 +1260,7 @@ export class GameEngine {
       Object.assign(particle, { x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: 0.32 + Math.random() * 0.38, maxLife: 0.7, color, size: 2 + Math.random() * 3.5 })
       this.particles.push(particle)
     }
-    const particleLimit = this.effectQuality === 'low' ? 240 : 600
+    const particleLimit = this.effectProfile.particleLimit
     if (this.particles.length > particleLimit) {
       const excess = this.particles.splice(0, this.particles.length - particleLimit)
       this.particlePool.push(...excess)
@@ -1244,6 +1271,7 @@ export class GameEngine {
     for (const brick of this.state.bricks) brick.flash = Math.max(0, brick.flash - dt)
     for (const item of this.trail) item.life -= dt
     this.trail = this.trail.filter((item) => item.life > 0)
+    if (this.trail.length > this.effectProfile.trailLimit) this.trail.splice(0, this.trail.length - this.effectProfile.trailLimit)
     const alive = []
     for (const particle of this.particles) {
       particle.life -= dt
@@ -1255,10 +1283,13 @@ export class GameEngine {
     this.particles = alive
     for (const wave of this.waves) { wave.life -= dt; wave.radius += 190 * dt }
     this.waves = this.waves.filter((wave) => wave.life > 0)
+    if (this.waves.length > this.effectProfile.waveLimit) this.waves.splice(0, this.waves.length - this.effectProfile.waveLimit)
     for (const floater of this.floaters) { floater.life -= dt; floater.y -= 42 * dt }
     this.floaters = this.floaters.filter((floater) => floater.life > 0)
+    if (this.floaters.length > this.effectProfile.floaterLimit) this.floaters.splice(0, this.floaters.length - this.effectProfile.floaterLimit)
     this.shake = Math.max(0, this.shake - 18 * dt)
     this.flash = Math.max(0, this.flash - 1.8 * dt)
+    if (this.reducedFlash) this.flash = Math.min(this.flash, 0.12)
   }
 
   touchState() { this.stateVersion += 1 }
@@ -1360,7 +1391,16 @@ export class GameEngine {
       hazards: this.hazards.map((hazard) => ({ kind: hazard.kind || 'magnet', x: +hazard.x.toFixed(1), y: +hazard.y.toFixed(1), vx: +hazard.vx.toFixed(1), vy: hazard.vy })),
       activeEffects: this.activeEffects(),
       bricksRemaining: this.remainingBricks(), totalBricks: this.state.bricks.length,
-      effects: { particles: this.particles.length, pool: this.particlePool.length, waves: this.waves.length, trailPoints: this.trail.length, shake: +this.shake.toFixed(1) },
+      effects: {
+        quality: this.effectQuality,
+        particleBudget: this.effectProfile.particleLimit,
+        particles: this.particles.length,
+        pool: this.particlePool.length,
+        waves: this.waves.length,
+        trailPoints: this.trail.length,
+        shake: this.screenShake ? +this.shake.toFixed(1) : 0,
+        reducedFlash: this.reducedFlash,
+      },
       boss: this.bossSummary(),
       runModifiers: { ...this.modifiers },
       availableActions: this.availableActions(),
@@ -1381,14 +1421,17 @@ export class GameEngine {
 
   render() {
     const ctx = this.ctx
-    const canShake = ['ready', 'playing'].includes(this.state.mode)
+    const canShake = this.screenShake && ['ready', 'playing'].includes(this.state.mode)
     const sx = canShake && this.shake ? (Math.random() - 0.5) * this.shake : 0
     const sy = canShake && this.shake ? (Math.random() - 0.5) * this.shake : 0
     ctx.save(); ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT); ctx.translate(sx, sy)
     this.drawBackground(ctx); this.drawHud(ctx); this.drawBoss(ctx); this.drawBricks(ctx); this.drawTrail(ctx)
     this.drawDrops(ctx); this.drawProjectiles(ctx); this.drawHazards(ctx); this.drawPaddle(ctx); this.drawBalls(ctx)
     this.drawEffects(ctx); this.drawModeOverlay(ctx)
-    if (this.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${this.flash})`; ctx.fillRect(-12, -12, GAME_WIDTH + 24, GAME_HEIGHT + 24) }
+    if (this.flash > 0) {
+      const flashAlpha = this.reducedFlash ? Math.min(0.12, this.flash) : this.flash
+      ctx.fillStyle = `rgba(255,255,255,${flashAlpha})`; ctx.fillRect(-12, -12, GAME_WIDTH + 24, GAME_HEIGHT + 24)
+    }
     ctx.restore()
   }
 
@@ -1519,14 +1562,14 @@ export class GameEngine {
       if (brick.hp <= 0) continue
       const reactor = brick.type === 'reactor'
       const reinforced = brick.maxHp > 1
-      ctx.save(); ctx.shadowColor = reactor ? '#ff7b54' : reinforced ? COLORS.purple : this.levelConfig.accent; ctx.shadowBlur = brick.flash > 0 ? 26 : reactor ? 18 : 10
+      ctx.save(); ctx.shadowColor = reactor ? '#ff7b54' : reinforced ? COLORS.purple : this.levelConfig.accent; ctx.shadowBlur = this.effectProfile.glow ? (brick.flash > 0 ? 26 : reactor ? 18 : 10) : 0
       ctx.fillStyle = brick.flash > 0 ? '#fff' : reactor ? '#ff7b54' : reinforced ? COLORS.purple : this.levelConfig.accent
       ctx.beginPath(); ctx.roundRect(brick.x, brick.y, brick.w, brick.h, 7); ctx.fill()
       ctx.strokeStyle = reactor ? '#ffe2a8' : reinforced ? '#e0c5ff' : 'rgba(211,255,248,.68)'; ctx.lineWidth = reactor || reinforced ? 2 : 1; ctx.stroke()
       if (reactor) {
         const cx = brick.x + brick.w / 2
         const cy = brick.y + brick.h / 2
-        ctx.shadowBlur = 12; ctx.shadowColor = COLORS.gold; ctx.fillStyle = '#fff2c7'
+        ctx.shadowBlur = this.effectProfile.glow ? 12 : 0; ctx.shadowColor = COLORS.gold; ctx.fillStyle = '#fff2c7'
         ctx.beginPath(); ctx.moveTo(cx, cy - 8); ctx.lineTo(cx + 8, cy); ctx.lineTo(cx, cy + 8); ctx.lineTo(cx - 8, cy); ctx.closePath(); ctx.fill()
         ctx.strokeStyle = 'rgba(98,20,24,.72)'; ctx.lineWidth = 1
         ctx.beginPath(); ctx.moveTo(brick.x + 5, cy); ctx.lineTo(cx - 9, cy); ctx.moveTo(cx + 9, cy); ctx.lineTo(brick.x + brick.w - 5, cy); ctx.stroke()
@@ -1554,7 +1597,7 @@ export class GameEngine {
   drawPaddle(ctx) {
     const paddle = this.state.paddle
     const guardActive = paddle.guardTimer > 0
-    ctx.save(); ctx.shadowColor = guardActive ? COLORS.gold : this.state.powerups.laser.remaining > 0 ? POWERUPS.laser.color : COLORS.cyan; ctx.shadowBlur = guardActive ? 34 : 25
+    ctx.save(); ctx.shadowColor = guardActive ? COLORS.gold : this.state.powerups.laser.remaining > 0 ? POWERUPS.laser.color : COLORS.cyan; ctx.shadowBlur = this.effectProfile.glow ? (guardActive ? 34 : 25) : 6
     const gradient = ctx.createLinearGradient(paddle.x, 0, paddle.x + paddle.w, 0)
     gradient.addColorStop(0, guardActive ? '#ff9b54' : '#1bb9b0'); gradient.addColorStop(.48, '#fff'); gradient.addColorStop(1, guardActive ? '#ffd166' : '#65ead6')
     ctx.fillStyle = gradient; ctx.beginPath(); ctx.roundRect(paddle.x, paddle.y, paddle.w, paddle.h, 9); ctx.fill()
@@ -1572,7 +1615,7 @@ export class GameEngine {
   drawBalls(ctx) {
     for (const ball of this.state.balls) {
       const color = this.state.powerups.pierce.remaining > 0 ? COLORS.gold : COLORS.cyan
-      ctx.save(); ctx.shadowColor = color; ctx.shadowBlur = this.state.powerups.pierce.remaining > 0 ? 34 : 26
+      ctx.save(); ctx.shadowColor = color; ctx.shadowBlur = this.effectProfile.glow ? (this.state.powerups.pierce.remaining > 0 ? 34 : 26) : 6
       const gradient = ctx.createRadialGradient(ball.x - 3, ball.y - 3, 1, ball.x, ball.y, ball.r)
       gradient.addColorStop(0, '#fff'); gradient.addColorStop(.45, '#e9fff7'); gradient.addColorStop(1, color)
       ctx.fillStyle = gradient; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, TAU); ctx.fill(); ctx.restore()
@@ -1582,12 +1625,12 @@ export class GameEngine {
   drawDrops(ctx) {
     for (const drop of this.state.drops) {
       if (drop.kind === 'coin') {
-        ctx.save(); ctx.shadowColor = COLORS.gold; ctx.shadowBlur = 18; ctx.fillStyle = COLORS.gold
+        ctx.save(); ctx.shadowColor = COLORS.gold; ctx.shadowBlur = this.effectProfile.glow ? 18 : 4; ctx.fillStyle = COLORS.gold
         ctx.beginPath(); ctx.arc(drop.x, drop.y, drop.r, 0, TAU); ctx.fill(); ctx.strokeStyle = '#fff4bd'; ctx.lineWidth = 2; ctx.stroke()
         ctx.fillStyle = '#7f5811'; ctx.font = '900 10px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('◈', drop.x, drop.y); ctx.restore()
       } else {
         const config = POWERUPS[drop.type]
-        ctx.save(); ctx.shadowColor = config.color; ctx.shadowBlur = 18 + Math.sin(drop.pulse * 8) * 5
+        ctx.save(); ctx.shadowColor = config.color; ctx.shadowBlur = this.effectProfile.glow ? 18 + Math.sin(drop.pulse * 8) * 5 : 4
         ctx.fillStyle = 'rgba(8,20,31,.92)'; ctx.strokeStyle = config.color; ctx.lineWidth = 2
         ctx.beginPath(); ctx.roundRect(drop.x, drop.y, drop.w, drop.h, 12); ctx.fill(); ctx.stroke()
         ctx.fillStyle = config.color; ctx.font = '900 17px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(config.short, drop.x + drop.w / 2, drop.y + drop.h / 2 + 1)
@@ -1598,20 +1641,20 @@ export class GameEngine {
 
   drawProjectiles(ctx) {
     for (const shot of this.projectiles) {
-      ctx.save(); ctx.shadowColor = shot.color; ctx.shadowBlur = 18; ctx.fillStyle = '#fff'; ctx.fillRect(shot.x, shot.y, shot.w, shot.h); ctx.fillStyle = shot.color; ctx.fillRect(shot.x - 2, shot.y + 6, shot.w + 4, shot.h - 4); ctx.restore()
+      ctx.save(); ctx.shadowColor = shot.color; ctx.shadowBlur = this.effectProfile.glow ? 18 : 4; ctx.fillStyle = '#fff'; ctx.fillRect(shot.x, shot.y, shot.w, shot.h); ctx.fillStyle = shot.color; ctx.fillRect(shot.x - 2, shot.y + 6, shot.w + 4, shot.h - 4); ctx.restore()
     }
   }
 
   drawEffects(ctx) {
     for (const wave of this.waves) {
-      ctx.save(); ctx.globalAlpha = clamp(wave.life / wave.maxLife, 0, 1); ctx.strokeStyle = wave.color; ctx.lineWidth = 3; ctx.shadowColor = wave.color; ctx.shadowBlur = 12
+      ctx.save(); ctx.globalAlpha = clamp(wave.life / wave.maxLife, 0, 1); ctx.strokeStyle = wave.color; ctx.lineWidth = 3; ctx.shadowColor = wave.color; ctx.shadowBlur = this.effectProfile.glow ? 12 : 0
       ctx.beginPath(); ctx.arc(wave.x, wave.y, wave.radius, 0, TAU); ctx.stroke(); ctx.restore()
     }
     for (const particle of this.particles) {
-      ctx.save(); ctx.globalAlpha = clamp(particle.life / particle.maxLife, 0, 1); ctx.fillStyle = particle.color; ctx.shadowColor = particle.color; ctx.shadowBlur = 8; ctx.fillRect(particle.x, particle.y, particle.size, particle.size); ctx.restore()
+      ctx.save(); ctx.globalAlpha = clamp(particle.life / particle.maxLife, 0, 1); ctx.fillStyle = particle.color; ctx.shadowColor = particle.color; ctx.shadowBlur = this.effectProfile.glow ? 8 : 0; ctx.fillRect(particle.x, particle.y, particle.size, particle.size); ctx.restore()
     }
     for (const floater of this.floaters) {
-      ctx.save(); ctx.globalAlpha = clamp(floater.life / .72, 0, 1); ctx.fillStyle = floater.color; ctx.shadowColor = floater.color; ctx.shadowBlur = 8; ctx.font = '900 14px system-ui'; ctx.textAlign = 'center'; ctx.fillText(floater.text, floater.x, floater.y); ctx.restore()
+      ctx.save(); ctx.globalAlpha = clamp(floater.life / .72, 0, 1); ctx.fillStyle = floater.color; ctx.shadowColor = floater.color; ctx.shadowBlur = this.effectProfile.glow ? 8 : 0; ctx.font = '900 14px system-ui'; ctx.textAlign = 'center'; ctx.fillText(floater.text, floater.x, floater.y); ctx.restore()
     }
   }
 

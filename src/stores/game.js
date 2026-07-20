@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import {
   createDefaultSave,
+  getStoragePersistence,
   loadGameSave,
   recordEndlessSettlement,
   recordRunSettlement,
@@ -29,6 +30,7 @@ export const useGameStore = defineStore('game', {
     settings: defaultSave.settings,
     saveStatus: 'loading',
     saveSource: 'new',
+    savePersistence: 'local',
     saveBackupKey: null,
     lastSettledRunId: 0,
     screen: 'title',
@@ -98,6 +100,8 @@ export const useGameStore = defineStore('game', {
       this.maxCombo = record?.bestCombo || 0
       this.saveSource = metadata.source || this.saveSource
       this.saveBackupKey = metadata.backupKey || null
+      if (metadata.persistent === false) this.savePersistence = 'memory'
+      else if (metadata.persistent === true) this.savePersistence = 'local'
       this.saveStatus = metadata.recovered ? 'recovered' : 'saved'
       this.selectedLevel = Math.min(this.selectedLevel || 1, save.campaign.highestUnlockedLevel)
       this.selectedChapter = Math.ceil(this.selectedLevel / 5)
@@ -111,7 +115,7 @@ export const useGameStore = defineStore('game', {
 
     persistSave() {
       const save = writeGameSave(this.exportSave())
-      this.applySave(save, { source: 'formal' })
+      this.applySave(save, { source: 'formal', persistent: getStoragePersistence() === 'local' })
       return save
     },
 
@@ -177,13 +181,14 @@ export const useGameStore = defineStore('game', {
       this.stars = snapshot.stars
       this.lastSettledRunId = snapshot.runId
       writeGameSave(updated)
+      this.savePersistence = getStoragePersistence()
       this.bestScore = endlessRun ? updated.endless.highScore : runRecord.highScore
       this.saveStatus = 'saved'
     },
 
     resetProgress() {
       const fresh = writeGameSave(createDefaultSave())
-      this.applySave(fresh, { source: 'new' })
+      this.applySave(fresh, { source: 'new', persistent: getStoragePersistence() === 'local' })
       this.lastSettledRunId = 0
       this.mode = 'menu'
       this.runType = 'campaign'
@@ -207,6 +212,13 @@ export const useGameStore = defineStore('game', {
     showTitle() { this.screen = 'title' },
     showCampaign() { this.screen = 'campaign' },
     showUpgrades() { this.screen = 'upgrades' },
+    showSettings() { this.screen = 'settings' },
+
+    updateSettings(patch = {}) {
+      this.settings = { ...this.settings, ...patch }
+      this.persistSave()
+      return { ...this.settings }
+    },
 
     selectChapter(chapterId) {
       const safe = Math.min(4, Math.max(1, Number(chapterId) || 1))
@@ -271,6 +283,8 @@ export const useGameStore = defineStore('game', {
         upgradeRefund: this.upgradeRefund,
         claimedStarRewards: [...this.claimedStarRewards],
         endless: { ...this.endless },
+        settings: { ...this.settings },
+        persistence: this.savePersistence,
         backupKey: this.saveBackupKey,
       }
     },

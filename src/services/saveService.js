@@ -1,8 +1,59 @@
 import { UPGRADE_DEFINITIONS } from '../config/progressionConfig.js'
+import { normalizeEffectQuality } from '../config/visualSettings.js'
 
 export const SAVE_KEY = 'gamename:save'
 export const LEGACY_STORE_KEY = 'gamename:game'
-export const SAVE_VERSION = 2
+export const SAVE_VERSION = 3
+
+const volatileStorage = new Map()
+const unavailableStorages = new WeakSet()
+let storagePersistence = 'local'
+
+function browserStorage() {
+  try {
+    return typeof window === 'undefined' ? null : window.localStorage
+  } catch {
+    storagePersistence = 'memory'
+    return null
+  }
+}
+
+function resilientStorage(primary, trackPersistence = false) {
+  if (primary?.__neonResilientStorage) return primary
+  let persistent = Boolean(primary) && !unavailableStorages.has(primary)
+  const failover = () => {
+    persistent = false
+    if (trackPersistence) storagePersistence = 'memory'
+    if (primary && typeof primary === 'object') unavailableStorages.add(primary)
+  }
+  if (trackPersistence) storagePersistence = persistent ? 'local' : 'memory'
+  return {
+    __neonResilientStorage: true,
+    get persistent() { return persistent },
+    getItem(key) {
+      if (persistent) {
+        try { return primary.getItem(key) } catch { failover() }
+      }
+      return volatileStorage.has(key) ? volatileStorage.get(key) : null
+    },
+    setItem(key, value) {
+      if (persistent) {
+        try { primary.setItem(key, String(value)); return } catch { failover() }
+      }
+      volatileStorage.set(key, String(value))
+    },
+    removeItem(key) {
+      if (persistent) {
+        try { primary.removeItem(key); return } catch { failover() }
+      }
+      volatileStorage.delete(key)
+    },
+  }
+}
+
+export function getStoragePersistence() {
+  return storagePersistence
+}
 
 const UPGRADE_LIMITS = Object.fromEntries(UPGRADE_DEFINITIONS.map((definition) => [definition.key, definition.maxLevel]))
 const UPGRADE_KEYS = Object.keys(UPGRADE_LIMITS)
@@ -42,7 +93,7 @@ export function createDefaultSave(now = Date.now()) {
       bossShield: 0,
       extraLife: 0,
     },
-    settings: { effectQuality: 'high', screenShake: true, controlMode: 'auto' },
+    settings: { effectQuality: 'auto', screenShake: true, reducedFlash: false, controlMode: 'auto' },
   }
 }
 
@@ -121,8 +172,11 @@ export function normalizeSave(input, now = Date.now()) {
     },
     upgrades,
     settings: {
-      effectQuality: input.settings?.effectQuality === 'low' ? 'low' : 'high',
+      effectQuality: inputVersion < 3
+        ? (input.settings?.effectQuality === 'low' ? 'low' : 'high')
+        : normalizeEffectQuality(input.settings?.effectQuality),
       screenShake: input.settings?.screenShake !== false,
+      reducedFlash: Boolean(input.settings?.reducedFlash),
       controlMode: ['auto', 'keyboard', 'pointer'].includes(input.settings?.controlMode)
         ? input.settings.controlMode
         : 'auto',
@@ -143,25 +197,29 @@ export function migrateLegacyStore(legacy, now = Date.now()) {
   return save
 }
 
-export function writeGameSave(save, storage = window.localStorage, now = Date.now()) {
+export function writeGameSave(save, storage, now = Date.now()) {
+  const usesBrowserStorage = storage === undefined
+  storage = resilientStorage(usesBrowserStorage ? browserStorage() : storage, usesBrowserStorage)
   const normalized = normalizeSave(save, now)
   normalized.profile.updatedAt = now
   storage.setItem(SAVE_KEY, JSON.stringify(normalized))
   return normalized
 }
 
-export function loadGameSave(storage = window.localStorage, now = Date.now()) {
+export function loadGameSave(storage, now = Date.now()) {
+  const usesBrowserStorage = storage === undefined
+  storage = resilientStorage(usesBrowserStorage ? browserStorage() : storage, usesBrowserStorage)
   const raw = storage.getItem(SAVE_KEY)
   if (raw !== null) {
     try {
       const save = normalizeSave(JSON.parse(raw), now)
       storage.setItem(SAVE_KEY, JSON.stringify(save))
-      return { save, source: 'formal', recovered: false, backupKey: null }
+      return { save, source: 'formal', recovered: false, backupKey: null, persistent: storage.persistent }
     } catch {
       const backupKey = `${SAVE_KEY}:corrupt:${now}`
       storage.setItem(backupKey, raw)
       const save = writeGameSave(createDefaultSave(now), storage, now)
-      return { save, source: 'recovered', recovered: true, backupKey }
+      return { save, source: 'recovered', recovered: true, backupKey, persistent: storage.persistent }
     }
   }
 
@@ -172,18 +230,18 @@ export function loadGameSave(storage = window.localStorage, now = Date.now()) {
       const backupKey = `${LEGACY_STORE_KEY}:migrated`
       if (storage.getItem(backupKey) === null) storage.setItem(backupKey, legacyRaw)
       storage.removeItem(LEGACY_STORE_KEY)
-      return { save, source: 'legacy', recovered: false, backupKey }
+      return { save, source: 'legacy', recovered: false, backupKey, persistent: storage.persistent }
     } catch {
       const backupKey = `${LEGACY_STORE_KEY}:corrupt:${now}`
       storage.setItem(backupKey, legacyRaw)
       storage.removeItem(LEGACY_STORE_KEY)
       const save = writeGameSave(createDefaultSave(now), storage, now)
-      return { save, source: 'recovered', recovered: true, backupKey }
+      return { save, source: 'recovered', recovered: true, backupKey, persistent: storage.persistent }
     }
   }
 
   const save = writeGameSave(createDefaultSave(now), storage, now)
-  return { save, source: 'new', recovered: false, backupKey: null }
+  return { save, source: 'new', recovered: false, backupKey: null, persistent: storage.persistent }
 }
 
 export function recordRunSettlement(currentSave, result, now = Date.now()) {

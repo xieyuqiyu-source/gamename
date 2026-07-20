@@ -5,9 +5,9 @@ import { GameEngine } from '../src/engine/GameEngine.js'
 import { getLevelConfig } from '../src/config/levels.js'
 import { FIXED_STEP } from '../src/config/gameConfig.js'
 
-function createBossEngine() {
+function createBossEngine(effectQuality = 'high') {
   const canvas = { getContext: () => ({}) }
-  const engine = new GameEngine(canvas, { levelConfig: getLevelConfig(5) })
+  const engine = new GameEngine(canvas, { levelConfig: getLevelConfig(5), effectQuality })
   engine.state.mode = 'playing'
   return engine
 }
@@ -66,12 +66,11 @@ test('击碎每阶段护盾并清空核心后进入胜利', () => {
 })
 
 test('低特效模式下 Boss 护盾破裂使用受控粒子数量', () => {
-  const engine = createBossEngine()
-  engine.effectQuality = 'low'
+  const engine = createBossEngine('low')
   destroyCurrentShield(engine)
   assert.equal(engine.state.boss.shieldActive, false)
-  assert.equal(engine.particles.length, 16)
-  assert.ok(engine.particles.length < 240)
+  assert.equal(engine.particles.length, 14)
+  assert.ok(engine.particles.length <= 180)
 })
 
 test('小球最终击破核心后不会在胜利态被重新加入场景', () => {

@@ -1,20 +1,29 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import CampaignHub from './components/CampaignHub.vue'
+import SettingsPanel from './components/SettingsPanel.vue'
 import UpgradeLab from './components/UpgradeLab.vue'
 import { MODE_LABELS } from './config/gameConfig'
 import { getChapterLevels, getEndlessLevelConfig, getLevelConfig, LEVELS } from './config/levels'
 import { getRunModifiers, getUpgradeCost, UPGRADE_DEFINITIONS } from './config/progressionConfig'
+import { detectVisualCapabilities, resolveEffectQuality } from './config/visualSettings'
 import { GameEngine } from './engine/GameEngine'
 import { useGameStore } from './stores/game'
 
 const store = useGameStore()
 store.hydrateSave()
 
+const devPreviewParams = import.meta.env.DEV ? new URLSearchParams(window.location.search) : null
+const requestedPreviewQuality = devPreviewParams?.get('quality')
+const previewQualityOverride = ['high', 'medium', 'low'].includes(requestedPreviewQuality) ? requestedPreviewQuality : null
+const previewShakeOverride = previewQualityOverride && devPreviewParams.has('shake') ? devPreviewParams.get('shake') !== '0' : null
+const previewFlashOverride = previewQualityOverride && devPreviewParams.has('reducedFlash') ? devPreviewParams.get('reducedFlash') === '1' : null
+
 const canvasRef = ref(null)
 const engineRef = shallowRef(null)
 const resetArmed = ref(false)
 const previewMode = ref(false)
+const visualCapabilities = ref(detectVisualCapabilities(window))
 const starSlots = [1, 2, 3]
 
 const modeLabel = computed(() => MODE_LABELS[store.mode] || store.mode)
@@ -27,7 +36,11 @@ const showReturnButton = computed(() => ['briefing', 'won', 'lost'].includes(sto
 const currentLevel = computed(() => isEndless.value ? getEndlessLevelConfig(store.wave || 1) : getLevelConfig(store.level))
 const bossActive = computed(() => store.screen === 'game' && store.mode !== 'menu' ? store.boss : null)
 const canNavigate = computed(() => !['ready', 'playing', 'paused', 'countdown'].includes(store.mode))
+const resolvedEffectQuality = computed(() => previewQualityOverride || resolveEffectQuality(store.settings.effectQuality, visualCapabilities.value))
+const effectiveScreenShake = computed(() => previewShakeOverride ?? store.settings.screenShake)
+const effectiveReducedFlash = computed(() => previewFlashOverride ?? store.settings.reducedFlash)
 const saveStatusLabel = computed(() => {
+  if (store.savePersistence === 'memory') return '临时内存 · 本地写入受限'
   if (store.saveStatus === 'recovered') return '已恢复新存档'
   if (store.saveSource === 'legacy') return '旧进度已迁移'
   if (store.saveSource === 'new') return '新存档已建立'
@@ -90,6 +103,29 @@ function openUpgrades() {
     levelConfig: currentLevel.value,
   })
   store.showUpgrades()
+}
+
+function openSettings() {
+  resetArmed.value = false
+  store.showSettings()
+}
+
+function syncVisualSettings() {
+  engineRef.value?.configureVisualSettings({
+    effectQuality: resolvedEffectQuality.value,
+    screenShake: effectiveScreenShake.value,
+    reducedFlash: effectiveReducedFlash.value,
+  })
+}
+
+function updateVisualSettings(patch) {
+  store.updateSettings(patch)
+  syncVisualSettings()
+}
+
+function handleViewportChange() {
+  visualCapabilities.value = detectVisualCapabilities(window)
+  if (store.settings.effectQuality === 'auto') syncVisualSettings()
 }
 
 function showTitle() {
@@ -172,6 +208,13 @@ function createTextState(engine) {
       maxLevel: definition.maxLevel,
       nextCost: getUpgradeCost(definition.key, store.upgrades[definition.key]),
     })),
+  } : store.screen === 'settings' ? {
+    requestedQuality: store.settings.effectQuality,
+    resolvedQuality: resolvedEffectQuality.value,
+    screenShake: store.settings.screenShake,
+    reducedFlash: store.settings.reducedFlash,
+    persistence: store.savePersistence,
+    capabilities: visualCapabilities.value,
   } : null
   return JSON.stringify({
     ...gameState,
@@ -191,7 +234,9 @@ onMounted(() => {
     onStateChange: (snapshot) => store.syncFromEngine(snapshot, { settle: !previewMode.value }),
     startingCoins: store.currency.coins,
     startingBestScore: record.value.highScore,
-    effectQuality: store.settings.effectQuality,
+    effectQuality: resolvedEffectQuality.value,
+    screenShake: effectiveScreenShake.value,
+    reducedFlash: effectiveReducedFlash.value,
     levelConfig: currentLevel.value,
     modifiers: getRunModifiers(store.upgrades),
     onOpenCampaign: openCampaign,
@@ -200,6 +245,7 @@ onMounted(() => {
   engineRef.value = engine
   engine.start()
   window.addEventListener('keydown', handleFullscreenKey)
+  window.addEventListener('resize', handleViewportChange)
   window.render_game_to_text = () => createTextState(engine)
   window.advanceTime = (milliseconds) => engine.advanceTime(milliseconds)
   if (import.meta.env.DEV) {
@@ -245,7 +291,15 @@ onMounted(() => {
       claimReward: (id) => store.claimStarReward(id),
     }
 
-    const previewParams = new URLSearchParams(window.location.search)
+    const previewParams = devPreviewParams
+    const previewQuality = previewParams.get('quality')
+    if (['high', 'medium', 'low'].includes(previewQuality)) {
+      engine.configureVisualSettings({
+        effectQuality: previewQuality,
+        screenShake: previewParams.get('shake') !== '0',
+        reducedFlash: previewParams.get('reducedFlash') === '1',
+      })
+    }
     const previewLevelId = Number(previewParams.get('preview'))
     if (previewLevelId >= 1 && previewLevelId <= 20) {
       previewMode.value = true
@@ -303,6 +357,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   engineRef.value?.destroy()
   window.removeEventListener('keydown', handleFullscreenKey)
+  window.removeEventListener('resize', handleViewportChange)
   delete window.render_game_to_text
   delete window.advanceTime
   delete window.__NEON_BREAKER_TEST__
@@ -317,7 +372,7 @@ onBeforeUnmount(() => {
       <div class="brand-lockup">
         <span class="brand-mark" aria-hidden="true"></span>
         <div>
-          <p>NEON ARCADE / BUILD 0.8</p>
+          <p>NEON ARCADE / BUILD 0.9</p>
           <h1>NEON BREAKER</h1>
         </div>
       </div>
@@ -326,10 +381,11 @@ onBeforeUnmount(() => {
           <button type="button" :class="{ active: store.screen === 'title' }" @click="showTitle">标题</button>
           <button type="button" :class="{ active: store.screen === 'campaign' }" @click="openCampaign">战役</button>
           <button type="button" :class="{ active: store.screen === 'upgrades' }" @click="openUpgrades">强化</button>
+          <button data-testid="settings-nav" type="button" :class="{ active: store.screen === 'settings' }" @click="openSettings">设置</button>
         </nav>
         <div class="build-status">
           <span class="live-dot"></span>
-          全章节与终极奇点
+          性能校准与兼容收口
         </div>
       </div>
     </header>
@@ -343,6 +399,14 @@ onBeforeUnmount(() => {
     />
     <UpgradeLab
       v-if="store.screen === 'upgrades'"
+      @campaign="openCampaign"
+      @title="showTitle"
+    />
+    <SettingsPanel
+      v-if="store.screen === 'settings'"
+      :resolved-quality="resolvedEffectQuality"
+      :capabilities="visualCapabilities"
+      @change="updateVisualSettings"
       @campaign="openCampaign"
       @title="showTitle"
     />
@@ -518,7 +582,7 @@ onBeforeUnmount(() => {
     <footer v-show="['title', 'game'].includes(store.screen)" class="game-footer">
       <span>CAMPAIGN &amp; PROGRESSION</span>
       <p>20 关全章节 · 四大核心 · 组合弹幕 · 双端战斗</p>
-      <strong>v0.8.0</strong>
+      <strong>v0.9.0</strong>
     </footer>
   </main>
 </template>

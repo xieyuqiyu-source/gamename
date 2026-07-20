@@ -1,7 +1,7 @@
 {
   "name": "gamename",
   "private": true,
-  "version": "0.8.0",
+  "version": "0.9.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,7 +11,9 @@
     "test:chapter1": "node scripts/verifyChapterOne.mjs",
     "test:chapter2": "node scripts/verifyChapterTwo.mjs",
     "test:final": "node scripts/verifyFinalChapters.mjs",
-    "test:endless": "node scripts/verifyEndless.mjs"
+    "test:endless": "node scripts/verifyEndless.mjs",
+    "test:balance": "node scripts/verifyBalance.mjs",
+    "test:performance": "node scripts/verifyPerformanceBudgets.mjs"
   },
   "dependencies": {
     "pinia": "^4.0.2",

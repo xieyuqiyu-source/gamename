@@ -27,6 +27,7 @@ export const BALL = {
   launchSpeed: 440,
   minVerticalSpeed: 190,
   maxSpeed: 650,
+  maxCount: 12,
 }
 
 export const POWERUPS = {

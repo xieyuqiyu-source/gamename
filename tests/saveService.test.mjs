@@ -19,12 +19,14 @@ class MemoryStorage {
   removeItem(key) { this.data.delete(key) }
 }
 
-test('首次加载会建立 v2 正式存档', () => {
+test('首次加载会建立 v3 正式存档与自动特效配置', () => {
   const storage = new MemoryStorage()
   const result = loadGameSave(storage, 1000)
 
   assert.equal(result.source, 'new')
-  assert.equal(result.save.saveVersion, 2)
+  assert.equal(result.save.saveVersion, 3)
+  assert.equal(result.save.settings.effectQuality, 'auto')
+  assert.equal(result.save.settings.reducedFlash, false)
   assert.equal(result.save.currency.coins, 0)
   assert.equal(JSON.parse(storage.getItem(SAVE_KEY)).profile.createdAt, 1000)
 })
@@ -57,10 +59,10 @@ test('损坏存档会备份原文并安全恢复', () => {
   assert.equal(result.source, 'recovered')
   assert.equal(result.recovered, true)
   assert.equal(storage.getItem(result.backupKey), broken)
-  assert.equal(JSON.parse(storage.getItem(SAVE_KEY)).saveVersion, 2)
+  assert.equal(JSON.parse(storage.getItem(SAVE_KEY)).saveVersion, 3)
 })
 
-test('v1 正式存档会升级到 v2 并补充星级奖励记录', () => {
+test('v1 正式存档会升级到 v3 并补充星级奖励与视觉设置', () => {
   const v1 = createDefaultSave(1000)
   v1.saveVersion = 1
   delete v1.campaign.claimedStarRewards
@@ -69,11 +71,44 @@ test('v1 正式存档会升级到 v2 并补充星级奖励记录', () => {
   const storage = new MemoryStorage({ [SAVE_KEY]: JSON.stringify(v1) })
   const result = loadGameSave(storage, 3500)
 
-  assert.equal(result.save.saveVersion, 2)
+  assert.equal(result.save.saveVersion, 3)
   assert.equal(result.save.profile.migratedFromSaveVersion, 1)
   assert.deepEqual(result.save.campaign.claimedStarRewards, [])
   assert.equal(result.save.upgrades.paddleWidth, 5)
   assert.equal(result.save.upgrades.extraLife, 2)
+  assert.equal(result.save.settings.effectQuality, 'high')
+  assert.equal(result.save.settings.reducedFlash, false)
+})
+
+test('v2 正式存档升级到 v3 时保留档案并归一化新增设置', () => {
+  const v2 = createDefaultSave(1000)
+  v2.saveVersion = 2
+  v2.currency.coins = 151
+  v2.campaign.highestUnlockedLevel = 2
+  v2.settings = { effectQuality: 'low', screenShake: false, controlMode: 'pointer' }
+  const storage = new MemoryStorage({ [SAVE_KEY]: JSON.stringify(v2) })
+  const result = loadGameSave(storage, 3600)
+
+  assert.equal(result.save.saveVersion, 3)
+  assert.equal(result.save.profile.migratedFromSaveVersion, 2)
+  assert.equal(result.save.currency.coins, 151)
+  assert.equal(result.save.campaign.highestUnlockedLevel, 2)
+  assert.deepEqual(result.save.settings, {
+    effectQuality: 'low', screenShake: false, reducedFlash: false, controlMode: 'pointer',
+  })
+})
+
+test('本地存储不可用时切换临时内存且不中断启动', () => {
+  const storage = {
+    getItem() { throw new Error('blocked') },
+    setItem() { throw new Error('blocked') },
+    removeItem() { throw new Error('blocked') },
+  }
+  const result = loadGameSave(storage, 3700)
+
+  assert.equal(result.persistent, false)
+  assert.equal(result.source, 'new')
+  assert.equal(result.save.saveVersion, 3)
 })
 
 test('结算会累计尝试但不会降低历史三星和记录', () => {
