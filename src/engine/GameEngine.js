@@ -21,8 +21,7 @@ const DEFAULT_MODIFIERS = {
   magnetRangeMultiplier: 1, comboGraceBonus: 0, shieldCharges: 0, extraLives: 0,
 }
 
-function createBricks(levelConfig) {
-  const layout = levelConfig.layout
+function createBricks(levelConfig, layout = levelConfig.layout) {
   const usable = GAME_WIDTH - levelConfig.left * 2 - levelConfig.gapX * (levelConfig.columns - 1)
   const width = usable / levelConfig.columns
   const bricks = []
@@ -37,6 +36,31 @@ function createBricks(levelConfig) {
     })
   }))
   return bricks
+}
+
+function createBossState(levelConfig, shieldNodes) {
+  const config = levelConfig.boss
+  if (!config) return null
+  const width = 166
+  return {
+    codename: config.codename,
+    x: (GAME_WIDTH - width) / 2,
+    y: 132,
+    w: width,
+    h: 54,
+    vx: config.phaseSpeeds[0],
+    hp: config.maxHp,
+    maxHp: config.maxHp,
+    phase: 1,
+    maxPhases: config.phases,
+    shieldActive: true,
+    shieldNodes,
+    hitCooldown: 0,
+    pulseTimer: 4.2,
+    pulse: 0,
+    flash: 0,
+    defeated: false,
+  }
 }
 
 export class GameEngine {
@@ -99,6 +123,7 @@ export class GameEngine {
   createInitialState() {
     const basePaddleWidth = PADDLE.width * this.modifiers.paddleWidthMultiplier
     const maxLives = 3 + this.modifiers.extraLives
+    const bricks = createBricks(this.levelConfig)
     return {
       mode: 'menu', runId: 0, level: this.levelConfig.id, levelName: this.levelConfig.name,
       lives: maxLives, maxLives, shieldCharges: this.modifiers.shieldCharges,
@@ -106,7 +131,8 @@ export class GameEngine {
       runStartCoins: this.startingCoins || 0, clearBonus: 0, stars: 0,
       starBreakdown: { clear: false, survivor: false, mastery: false },
       combo: 0, maxCombo: 0, comboTimer: 0, destroyedCount: 0,
-      bricks: createBricks(this.levelConfig),
+      bricks,
+      boss: createBossState(this.levelConfig, bricks.length),
       paddle: { x: (GAME_WIDTH - basePaddleWidth) / 2, y: PADDLE.y, w: basePaddleWidth, h: PADDLE.height, velocityX: 0 },
       balls: [], drops: [], message: '准备进入霓虹试炼', laserCooldown: 0,
       resumeCountdown: 0,
@@ -379,6 +405,7 @@ export class GameEngine {
     }
     if (this.state.mode === 'playing') {
       this.updatePowerups(dt)
+      this.updateBoss(dt)
       this.updateBalls(dt)
       this.updateProjectiles(dt)
       this.updateDrops(dt)
@@ -418,6 +445,9 @@ export class GameEngine {
       if (ball.x + ball.r >= GAME_WIDTH - 14 && ball.vx > 0) { ball.x = GAME_WIDTH - 14 - ball.r; ball.vx = -Math.abs(ball.vx); this.spawnImpact(ball.x, ball.y, COLORS.cyan, 3) }
       if (ball.y - ball.r <= 112 && ball.vy < 0) { ball.y = 112 + ball.r; ball.vy = Math.abs(ball.vy); this.spawnImpact(ball.x, ball.y, COLORS.cyan, 3) }
 
+      this.collideBoss(ball, previousX, previousY)
+      if (this.state.mode !== 'playing') break
+
       const paddle = this.state.paddle
       if (ball.vy > 0 && circleRectCollision(ball, paddle)) {
         ball.y = paddle.y - ball.r - 0.5
@@ -430,12 +460,13 @@ export class GameEngine {
         this.spawnImpact(ball.x, paddle.y, COLORS.cyan, 8); this.shake = Math.max(this.shake, 1.2)
       }
       this.collideBricks(ball, previousX, previousY)
+      if (this.state.mode !== 'playing') break
       if (ball.y - ball.r <= GAME_HEIGHT) {
         surviving.push(ball)
         if (this.state.mode === 'playing') this.trail.push({ id: ball.id, x: ball.x, y: ball.y, life: 0.24 })
       }
     }
-    this.state.balls = surviving
+    this.state.balls = this.state.mode === 'playing' ? surviving : []
     if (this.trail.length > 150) this.trail.splice(0, this.trail.length - 150)
     if (this.state.mode === 'playing' && this.state.balls.length === 0) this.loseBall()
   }
@@ -452,6 +483,115 @@ export class GameEngine {
       this.damageBrick(brick, ball.x, ball.y, 'ball')
       if (!piercing) break
     }
+  }
+
+  collideBoss(ball, previousX, previousY) {
+    const boss = this.state.boss
+    if (!boss || boss.defeated || !circleRectCollision(ball, boss)) return
+    this.resolveBrickBounce(ball, boss, previousX, previousY)
+    if (boss.hitCooldown > 0) return
+    if (boss.shieldActive) {
+      boss.hitCooldown = 0.12
+      boss.flash = 0.1
+      this.state.message = `护盾在线 · 剩余 ${this.remainingBricks()} 个阵列节点`
+      this.spawnImpact(ball.x, ball.y, COLORS.cyan, 7)
+      this.touchState()
+      return
+    }
+    this.damageBoss(ball.x, ball.y, 'ball')
+  }
+
+  updateBoss(dt) {
+    const boss = this.state.boss
+    if (!boss || boss.defeated) return
+    const speed = this.levelConfig.boss.phaseSpeeds[boss.phase - 1]
+    boss.vx = Math.sign(boss.vx || 1) * speed
+    boss.x += boss.vx * dt
+    const minX = 28
+    const maxX = GAME_WIDTH - 28 - boss.w
+    if (boss.x <= minX) { boss.x = minX; boss.vx = Math.abs(boss.vx) }
+    if (boss.x >= maxX) { boss.x = maxX; boss.vx = -Math.abs(boss.vx) }
+    boss.hitCooldown = Math.max(0, boss.hitCooldown - dt)
+    boss.flash = Math.max(0, boss.flash - dt)
+    boss.pulse = Math.max(0, boss.pulse - dt * 1.8)
+    boss.pulseTimer -= dt
+    if (boss.pulseTimer <= 0) {
+      boss.pulseTimer = Math.max(2.7, 4.6 - boss.phase * 0.55)
+      boss.pulse = 1
+      this.waves.push({ x: boss.x + boss.w / 2, y: boss.y + boss.h / 2, radius: 20, life: 0.7, maxLife: 0.7, color: this.levelConfig.accent })
+      this.shake = Math.max(this.shake, 2.2 + boss.phase * 0.7)
+      this.state.message = `棱镜脉冲 · PHASE ${boss.phase}`
+      this.touchState()
+    }
+    if (boss.shieldActive && this.remainingBricks() === 0) this.breakBossShield()
+  }
+
+  breakBossShield() {
+    const boss = this.state.boss
+    if (!boss || !boss.shieldActive || boss.defeated) return false
+    boss.shieldActive = false
+    boss.shieldNodes = 0
+    boss.pulse = 1
+    this.flash = Math.max(this.flash, 0.22)
+    this.shake = Math.max(this.shake, 6)
+    this.spawnBurst(boss.x + boss.w / 2, boss.y + boss.h / 2, COLORS.gold, 36)
+    this.state.message = `PHASE ${boss.phase} 护盾破裂 · 攻击核心`
+    this.touchState(); this.publish(true)
+    return true
+  }
+
+  damageBoss(x, y, source = 'ball') {
+    const boss = this.state.boss
+    if (!boss || boss.defeated || boss.shieldActive || boss.hitCooldown > 0) return false
+    boss.hp = Math.max(0, boss.hp - 1)
+    boss.hitCooldown = source === 'laser' ? 0.09 : 0.16
+    boss.flash = 0.18
+    this.state.combo += 1
+    this.state.comboTimer = this.comboWindow()
+    this.state.maxCombo = Math.max(this.state.maxCombo, this.state.combo)
+    const points = 700 + boss.phase * 180 + Math.min(900, this.state.combo * 30)
+    this.state.score += points
+    this.state.bestScore = Math.max(this.state.bestScore, this.state.score)
+    this.floaters.push({ x, y, text: `CORE -1 · +${points}`, life: 0.82, color: COLORS.gold })
+    this.spawnBurst(x, y, COLORS.gold, 24)
+    this.waves.push({ x, y, radius: 8, life: 0.42, maxLife: 0.42, color: COLORS.gold })
+    this.flash = Math.max(this.flash, 0.12)
+    this.shake = Math.max(this.shake, 4.5)
+    this.state.message = `${boss.codename} · CORE ${boss.hp} / ${boss.maxHp}`
+    if (boss.hp <= 0) {
+      boss.defeated = true
+      boss.shieldActive = false
+      this.state.message = `${boss.codename} 已击破`
+      this.touchState()
+      this.winLevel()
+      return true
+    }
+    const hpPerPhase = boss.maxHp / boss.maxPhases
+    const nextPhase = Math.min(boss.maxPhases, Math.floor((boss.maxHp - boss.hp) / hpPerPhase) + 1)
+    if (nextPhase > boss.phase) this.startBossPhase(nextPhase)
+    this.touchState()
+    return true
+  }
+
+  startBossPhase(phase) {
+    const boss = this.state.boss
+    if (!boss || phase > boss.maxPhases) return false
+    const layout = this.levelConfig.boss.phaseLayouts[phase - 1]
+    this.state.bricks = createBricks(this.levelConfig, layout)
+    boss.phase = phase
+    boss.shieldActive = true
+    boss.shieldNodes = this.state.bricks.length
+    boss.x = (GAME_WIDTH - boss.w) / 2
+    boss.vx = (phase % 2 ? 1 : -1) * this.levelConfig.boss.phaseSpeeds[phase - 1]
+    boss.hitCooldown = 0.45
+    boss.pulseTimer = Math.max(2.7, 4.6 - phase * 0.55)
+    boss.pulse = 1
+    this.state.message = `PHASE ${phase} · 护盾阵列重构`
+    this.spawnBurst(boss.x + boss.w / 2, boss.y + boss.h / 2, this.levelConfig.accent, 54)
+    this.flash = Math.max(this.flash, 0.28)
+    this.shake = Math.max(this.shake, 7)
+    this.touchState(); this.publish(true)
+    return true
   }
 
   resolveBrickBounce(ball, brick, previousX, previousY) {
@@ -512,7 +652,10 @@ export class GameEngine {
     }
     this.state.message = this.state.combo >= 10 ? `${this.state.combo} 连击 · 能量过载！` : `${this.state.combo} 连击`
     this.touchState()
-    if (this.remainingBricks() === 0) this.winLevel()
+    if (this.remainingBricks() === 0) {
+      if (this.state.boss) this.breakBossShield()
+      else this.winLevel()
+    }
   }
 
   updateCombo(dt) {
@@ -661,14 +804,21 @@ export class GameEngine {
   updateProjectiles(dt) {
     const kept = []
     for (const shot of this.projectiles) {
+      if (this.state.mode !== 'playing') break
       shot.y += shot.vy * dt
       let hit = false
       for (const brick of this.state.bricks) {
         if (brick.hp > 0 && rectCollision(shot, brick)) { this.damageBrick(brick, shot.x + shot.w / 2, shot.y, 'laser'); hit = true; break }
       }
+      const boss = this.state.boss
+      if (!hit && boss && !boss.defeated && rectCollision(shot, boss)) {
+        if (!boss.shieldActive) this.damageBoss(shot.x + shot.w / 2, shot.y, 'laser')
+        else this.spawnImpact(shot.x, shot.y, COLORS.cyan, 5)
+        hit = true
+      }
       if (!hit && shot.y + shot.h > 112) kept.push(shot)
     }
-    this.projectiles = kept
+    this.projectiles = this.state.mode === 'playing' ? kept : []
   }
 
   loseBall() {
@@ -775,6 +925,24 @@ export class GameEngine {
     return Object.entries(this.state.powerups).filter(([, value]) => value.remaining > 0).map(([type, value]) => ({ type, name: POWERUPS[type].name, short: POWERUPS[type].short, color: POWERUPS[type].color, remaining: Number(value.remaining.toFixed(1)), stacks: value.stacks || 0 }))
   }
 
+  bossSummary() {
+    const boss = this.state.boss
+    if (!boss) return null
+    return {
+      codename: boss.codename,
+      hp: boss.hp,
+      maxHp: boss.maxHp,
+      phase: boss.phase,
+      maxPhases: boss.maxPhases,
+      shieldActive: boss.shieldActive,
+      shieldNodes: boss.shieldActive ? this.remainingBricks() : 0,
+      x: +boss.x.toFixed(1),
+      y: boss.y,
+      width: boss.w,
+      defeated: boss.defeated,
+    }
+  }
+
   getSummary() {
     return {
       mode: this.state.mode, runId: this.state.runId, level: this.state.level, levelName: this.state.levelName,
@@ -794,6 +962,7 @@ export class GameEngine {
         chapter: this.levelConfig.chapter, accent: this.levelConfig.accent, isBoss: this.levelConfig.isBoss,
         targetScore: this.levelConfig.targetScore, targetCombo: this.levelConfig.targetCombo,
       },
+      boss: this.bossSummary(),
       runModifiers: { ...this.modifiers },
     }
   }
@@ -827,6 +996,7 @@ export class GameEngine {
       projectiles: this.projectiles.length, activeEffects: this.activeEffects(),
       bricksRemaining: this.remainingBricks(), totalBricks: this.state.bricks.length,
       effects: { particles: this.particles.length, pool: this.particlePool.length, waves: this.waves.length, trailPoints: this.trail.length, shake: +this.shake.toFixed(1) },
+      boss: this.bossSummary(),
       runModifiers: { ...this.modifiers },
       availableActions: this.availableActions(),
     })
@@ -850,7 +1020,7 @@ export class GameEngine {
     const sx = canShake && this.shake ? (Math.random() - 0.5) * this.shake : 0
     const sy = canShake && this.shake ? (Math.random() - 0.5) * this.shake : 0
     ctx.save(); ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT); ctx.translate(sx, sy)
-    this.drawBackground(ctx); this.drawHud(ctx); this.drawBricks(ctx); this.drawTrail(ctx)
+    this.drawBackground(ctx); this.drawHud(ctx); this.drawBoss(ctx); this.drawBricks(ctx); this.drawTrail(ctx)
     this.drawDrops(ctx); this.drawProjectiles(ctx); this.drawPaddle(ctx); this.drawBalls(ctx)
     this.drawEffects(ctx); this.drawModeOverlay(ctx)
     if (this.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${this.flash})`; ctx.fillRect(-12, -12, GAME_WIDTH + 24, GAME_HEIGHT + 24) }
@@ -885,6 +1055,57 @@ export class GameEngine {
       ctx.save(); ctx.shadowColor = i < this.state.lives ? COLORS.magenta : 'transparent'; ctx.shadowBlur = 12
       ctx.fillStyle = i < this.state.lives ? COLORS.magenta : 'rgba(117,148,157,.18)'; ctx.beginPath(); ctx.arc(x, 56, 8, 0, TAU); ctx.fill(); ctx.restore()
     }
+    const boss = this.state.boss
+    if (boss && !boss.defeated) {
+      const barX = GAME_WIDTH / 2 - 78
+      const hpRatio = boss.hp / boss.maxHp
+      ctx.textAlign = 'center'; ctx.fillStyle = boss.shieldActive ? COLORS.cyan : COLORS.gold
+      ctx.font = '800 9px ui-monospace, monospace'; ctx.fillText(`BOSS P${boss.phase}/${boss.maxPhases} · ${boss.shieldActive ? `SHIELD ${this.remainingBricks()}` : `CORE ${boss.hp}`}`, GAME_WIDTH / 2, 82)
+      ctx.fillStyle = 'rgba(255,255,255,.1)'; ctx.fillRect(barX, 91, 156, 4)
+      const bar = ctx.createLinearGradient(barX, 0, barX + 156, 0)
+      bar.addColorStop(0, COLORS.magenta); bar.addColorStop(1, COLORS.gold)
+      ctx.fillStyle = bar; ctx.fillRect(barX, 91, 156 * hpRatio, 4)
+    }
+  }
+
+  drawBoss(ctx) {
+    const boss = this.state.boss
+    if (!boss || boss.defeated || ['menu', 'briefing'].includes(this.state.mode)) return
+    const cx = boss.x + boss.w / 2
+    const cy = boss.y + boss.h / 2
+    ctx.save()
+    if (boss.pulse > 0) {
+      ctx.globalAlpha = boss.pulse * 0.34
+      ctx.strokeStyle = this.levelConfig.accent
+      ctx.lineWidth = 3
+      ctx.shadowColor = this.levelConfig.accent
+      ctx.shadowBlur = 24
+      ctx.beginPath(); ctx.ellipse(cx, cy, boss.w * (0.58 + (1 - boss.pulse) * 0.18), 40 + (1 - boss.pulse) * 20, 0, 0, TAU); ctx.stroke()
+      ctx.globalAlpha = 1
+    }
+    ctx.shadowColor = boss.shieldActive ? COLORS.cyan : COLORS.gold
+    ctx.shadowBlur = boss.flash > 0 ? 38 : 22
+    ctx.fillStyle = boss.flash > 0 ? '#ffffff' : 'rgba(13, 29, 48, .98)'
+    ctx.strokeStyle = boss.shieldActive ? COLORS.cyan : COLORS.gold
+    ctx.lineWidth = 2
+    ctx.beginPath(); ctx.roundRect(boss.x, boss.y, boss.w, boss.h, 16); ctx.fill(); ctx.stroke()
+    ctx.fillStyle = 'rgba(185,128,255,.28)'
+    ctx.beginPath(); ctx.moveTo(boss.x + 18, cy); ctx.lineTo(boss.x - 18, boss.y + 8); ctx.lineTo(boss.x - 7, boss.y + boss.h - 5); ctx.closePath(); ctx.fill()
+    ctx.beginPath(); ctx.moveTo(boss.x + boss.w - 18, cy); ctx.lineTo(boss.x + boss.w + 18, boss.y + 8); ctx.lineTo(boss.x + boss.w + 7, boss.y + boss.h - 5); ctx.closePath(); ctx.fill()
+    const core = ctx.createRadialGradient(cx - 5, cy - 6, 2, cx, cy, 22)
+    core.addColorStop(0, '#fff'); core.addColorStop(.28, boss.shieldActive ? COLORS.cyan : COLORS.gold); core.addColorStop(1, '#7135b9')
+    ctx.fillStyle = core
+    ctx.beginPath(); ctx.moveTo(cx, cy - 20); ctx.lineTo(cx + 20, cy); ctx.lineTo(cx, cy + 20); ctx.lineTo(cx - 20, cy); ctx.closePath(); ctx.fill()
+    if (boss.shieldActive) {
+      ctx.globalAlpha = .58
+      ctx.strokeStyle = COLORS.cyan
+      ctx.lineWidth = 2
+      ctx.beginPath(); ctx.ellipse(cx, cy, boss.w / 2 + 12, boss.h / 2 + 12, 0, 0, TAU); ctx.stroke()
+      ctx.globalAlpha = 1
+    }
+    ctx.textAlign = 'center'; ctx.fillStyle = '#effffc'; ctx.font = '900 8px ui-monospace, monospace'
+    ctx.fillText(`${boss.codename} · P${boss.phase}`, cx, boss.y - 9)
+    ctx.restore()
   }
 
   drawBricks(ctx) {
@@ -993,7 +1214,7 @@ export class GameEngine {
       ctx.fillStyle = COLORS.muted; ctx.font = '500 12px system-ui'; ctx.fillText(this.levelConfig.isBoss ? '守关核心预备战 · 高额清关奖励' : this.levelConfig.chapter, GAME_WIDTH / 2, 292)
 
       const criteria = [
-        ['Ⅰ', '完成关卡', '清除全部砖块', COLORS.cyan],
+        ['Ⅰ', '完成关卡', this.levelConfig.isBoss ? '击破三阶段棱镜核心' : '清除全部砖块', COLORS.cyan],
         ['Ⅱ', '保持能量', '剩余至少 2 条生命', COLORS.magenta],
         ['Ⅲ', '达成精通', `${this.levelConfig.targetScore} 分或 ${this.levelConfig.targetCombo} 连击`, COLORS.gold],
       ]

@@ -58,6 +58,7 @@ export const useGameStore = defineStore('game', {
     message: '准备进入霓虹试炼',
     resumeCountdown: 0,
     levelMeta: { chapter: '霓虹启程', accent: '#55f4dd', isBoss: false, targetScore: 15000, targetCombo: 35 },
+    boss: null,
     runModifiers: {},
   }),
 
@@ -121,7 +122,7 @@ export const useGameStore = defineStore('game', {
       }))
     },
 
-    syncFromEngine(snapshot) {
+    syncFromEngine(snapshot, { settle = true } = {}) {
       this.mode = snapshot.mode
       this.runId = snapshot.runId
       this.level = snapshot.level
@@ -146,9 +147,10 @@ export const useGameStore = defineStore('game', {
       this.message = snapshot.message
       this.resumeCountdown = snapshot.resumeCountdown || 0
       this.levelMeta = snapshot.levelMeta || this.levelMeta
+      this.boss = snapshot.boss || null
       this.runModifiers = snapshot.runModifiers || {}
 
-      if (['won', 'lost'].includes(snapshot.mode) && snapshot.runId > 0 && snapshot.runId !== this.lastSettledRunId) {
+      if (settle && ['won', 'lost'].includes(snapshot.mode) && snapshot.runId > 0 && snapshot.runId !== this.lastSettledRunId) {
         this.settleRun(snapshot)
       }
     },

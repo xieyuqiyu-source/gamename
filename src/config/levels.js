@@ -20,7 +20,65 @@ const BASE_PATTERNS = [
   ['111111111', '100010001', '101111101', '101111101', '101111101', '100010001', '111111111'],
 ]
 
-const LEVEL_ONE_LAYOUT = ['001111100', '011222110', '112111211', '121111121', '112111211', '011222110', '001111100']
+const FIRST_CHAPTER_LEVELS = [
+  {
+    name: '初次折射',
+    description: '用对称棱镜阵列掌握挡板回弹、强化砖与连击节奏。',
+    targetScore: 15000,
+    targetCombo: 35,
+    clearBonus: 20,
+    ballSpeedMultiplier: 1,
+    layout: ['001111100', '011222110', '112111211', '121111121', '112111211', '011222110', '001111100'],
+  },
+  {
+    name: '双棱回声',
+    description: '击穿左右镜像棱柱，利用中央通道延续高速折返。',
+    targetScore: 16800,
+    targetCombo: 38,
+    clearBonus: 25,
+    ballSpeedMultiplier: 1.035,
+    layout: ['110000011', '221000122', '112101211', '012222210', '112101211', '221000122', '110000011'],
+  },
+  {
+    name: '流光阶梯',
+    description: '沿逐层收束的光阶向上推进，控制大角度回球清理边角。',
+    targetScore: 18600,
+    targetCombo: 42,
+    clearBonus: 30,
+    ballSpeedMultiplier: 1.065,
+    layout: ['100000001', '210000012', '121000121', '212101212', '121222121', '212111212', '122222221'],
+  },
+  {
+    name: '交错脉冲',
+    description: '强化砖组成交叉脉冲阵列，稳定长连击才能迅速瓦解核心。',
+    targetScore: 21800,
+    targetCombo: 48,
+    clearBonus: 38,
+    ballSpeedMultiplier: 1.1,
+    layout: ['001212100', '001222100', '111222111', '222111222', '111222111', '001222100', '001212100'],
+  },
+  {
+    name: '棱镜核心',
+    description: '第一章守关核心：击碎每阶段护盾阵列，再攻击移动核心。',
+    targetScore: 30000,
+    targetCombo: 55,
+    clearBonus: 60,
+    ballSpeedMultiplier: 1.12,
+    top: 244,
+    layout: ['001111100', '012222210', '122000221', '120000021', '011000110', '001111100', '000000000'],
+    boss: {
+      codename: 'PRISM WARDEN',
+      maxHp: 12,
+      phases: 3,
+      phaseSpeeds: [88, 126, 172],
+      phaseLayouts: [
+        ['001111100', '012222210', '122000221', '120000021', '011000110', '001111100', '000000000'],
+        ['010202010', '121111121', '012222210', '001111100', '012000210', '001222100', '000000000'],
+        ['200010002', '120111021', '012222210', '001212100', '010222010', '001111100', '000000000'],
+      ],
+    },
+  },
+]
 
 function strengthenLayout(pattern, level) {
   return pattern.map((row, rowIndex) => [...row].map((cell, columnIndex) => {
@@ -34,31 +92,31 @@ function createLevel(level) {
   const chapter = CHAPTERS[Math.floor((level - 1) / 5)]
   const isBoss = level % 5 === 0
   const chapterIndex = (level - 1) % 5
+  const chapterOneConfig = level <= 5 ? FIRST_CHAPTER_LEVELS[level - 1] : null
   return {
     id: level,
-    name: LEVEL_NAMES[level - 1],
+    name: chapterOneConfig?.name || LEVEL_NAMES[level - 1],
     chapterId: chapter.id,
     chapter: chapter.name,
     chapterCodename: chapter.codename,
     accent: chapter.accent,
-    description: isBoss
+    description: chapterOneConfig?.description || (isBoss
       ? `突破${chapter.name}的守关核心。Boss 机制将在对应章节版本中继续强化。`
-      : `${chapter.description} 当前威胁等级 ${chapterIndex + 1}。`,
+      : `${chapter.description} 当前威胁等级 ${chapterIndex + 1}。`),
     isBoss,
-    targetScore: 15000 + (level - 1) * 1800,
-    targetCombo: 35 + Math.floor((level - 1) * 1.5),
-    clearBonus: 20 + (level - 1) * 3 + (isBoss ? 15 : 0),
-    ballSpeedMultiplier: 1 + Math.min(0.22, (level - 1) * 0.012),
+    targetScore: chapterOneConfig?.targetScore ?? 15000 + (level - 1) * 1800,
+    targetCombo: chapterOneConfig?.targetCombo ?? 35 + Math.floor((level - 1) * 1.5),
+    clearBonus: chapterOneConfig?.clearBonus ?? 20 + (level - 1) * 3 + (isBoss ? 15 : 0),
+    ballSpeedMultiplier: chapterOneConfig?.ballSpeedMultiplier ?? 1 + Math.min(0.22, (level - 1) * 0.012),
     columns: 9,
     rows: 7,
     left: 34,
-    top: 178,
+    top: chapterOneConfig?.top ?? 178,
     gapX: 6,
     gapY: 9,
     brickHeight: 28,
-    layout: level === 1
-      ? LEVEL_ONE_LAYOUT
-      : strengthenLayout(BASE_PATTERNS[(level - 1) % BASE_PATTERNS.length], level),
+    layout: chapterOneConfig?.layout || strengthenLayout(BASE_PATTERNS[(level - 1) % BASE_PATTERNS.length], level),
+    boss: chapterOneConfig?.boss || null,
   }
 }
 

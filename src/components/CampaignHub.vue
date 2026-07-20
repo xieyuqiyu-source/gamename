@@ -90,6 +90,11 @@ function playSelected() {
         </div>
         <h3>{{ selectedLevel.name }}</h3>
         <p>{{ selectedLevel.description }}</p>
+        <div v-if="selectedLevel.boss" class="boss-preview">
+          <span>BOSS PROTOCOL</span>
+          <strong>{{ selectedLevel.boss.codename }}</strong>
+          <small>{{ selectedLevel.boss.phases }} 阶段 · {{ selectedLevel.boss.maxHp }} 核心耐久 · 移动护盾</small>
+        </div>
         <dl>
           <div><dt>目标分数</dt><dd>{{ selectedLevel.targetScore }}</dd></div>
           <div><dt>目标连击</dt><dd>{{ selectedLevel.targetCombo }}</dd></div>

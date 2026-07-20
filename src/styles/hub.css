@@ -47,6 +47,10 @@
 .detail-heading b { padding: 3px 7px; border: 1px solid color-mix(in srgb, var(--chapter-accent), transparent 60%); border-radius: 99px; }
 .mission-detail h3 { margin: 18px 0 7px; color: #effffc; font-size: 24px; }
 .mission-detail > p { min-height: 40px; margin: 0 0 14px; color: #769295; font-size: 10px; line-height: 1.65; }
+.boss-preview { display: grid; gap: 3px; margin: 2px 0 9px; padding: 8px 10px; border: 1px solid rgba(255, 209, 102, .28); border-radius: 9px; background: rgba(255, 209, 102, .045); }
+.boss-preview span { color: #ffd166; font-size: 6px; font-weight: 900; letter-spacing: .14em; }
+.boss-preview strong { color: #effffc; font: 850 10px ui-monospace, monospace; }
+.boss-preview small { color: #8b9b94; font-size: 7px; }
 .mission-detail dl { display: grid; gap: 1px; margin: 0; }
 .mission-detail dl div { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid rgba(85, 244, 221, .09); }
 .mission-detail dt { color: #6f8b8e; font-size: 9px; }
@@ -106,7 +110,7 @@
   .reward-track { grid-template-columns: 110px repeat(4, 1fr); }
 }
 
-@media (max-height: 780px) and (min-width: 721px) {
+@media (max-height: 840px) and (min-width: 721px) {
   .hub-view { min-height: 0; padding: 16px 24px; }
   .hub-hero { margin-bottom: 10px; }
   .hub-hero h2 { font-size: 31px; }
@@ -119,6 +123,7 @@
   .mission-detail { min-height: 236px; padding: 12px 15px; }
   .mission-detail h3 { margin: 8px 0 4px; font-size: 20px; }
   .mission-detail > p { min-height: 0; max-height: 28px; overflow: hidden; margin-bottom: 6px; }
+  .boss-preview { gap: 1px; margin-bottom: 5px; padding: 5px 8px; }
   .mission-detail dl div { padding: 4px 0; }
   .detail-stars { margin-top: 6px; }
   .deploy-button { min-height: 38px; margin-top: 7px; }
@@ -157,6 +162,9 @@
   .mission-detail { min-height: 195px; margin-top: 2px; padding: 12px 14px; }
   .mission-detail h3 { margin: 8px 0 4px; font-size: 20px; }
   .mission-detail > p { min-height: 0; max-height: 28px; overflow: hidden; margin-bottom: 6px; line-height: 1.45; }
+  .boss-preview { grid-template-columns: auto 1fr; align-items: center; gap: 2px 7px; margin-bottom: 5px; padding: 5px 8px; }
+  .boss-preview strong { text-align: right; }
+  .boss-preview small { grid-column: 1 / -1; white-space: nowrap; }
   .mission-detail dl div { padding: 4px 0; }
   .detail-stars { margin-top: 7px; }
   .deploy-button { margin-top: 8px; }
@@ -181,4 +189,23 @@
   .hub-hero p { font-size: 7px; letter-spacing: .12em; }
   .hub-hero h2 { font-size: 24px; }
   .hub-wallet { min-width: 98px; }
+}
+
+@media (max-width: 370px) {
+  .campaign-hub { padding-top: 8px; padding-bottom: 7px; }
+  .campaign-hub .hub-hero { margin-bottom: 5px; }
+  .campaign-hub .chapter-rail { margin-bottom: 6px; }
+  .level-node { min-height: 132px; }
+  .campaign-body { gap: 5px; }
+  .mission-detail { min-height: 0; padding: 9px 12px; }
+  .mission-detail h3 { margin-top: 5px; }
+  .mission-detail > p { display: block; max-height: 16px; margin-bottom: 3px; overflow: hidden; font-size: 8px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+  .boss-preview { margin: 0 0 4px; padding: 4px 7px; }
+  .boss-preview small { font-size: 6px; }
+  .mission-detail dl div { padding: 3px 0; }
+  .detail-stars { margin-top: 4px; }
+  .deploy-button { min-height: 38px; margin-top: 5px; }
+  .campaign-hub .reward-track { margin-top: 5px; padding-top: 6px; padding-bottom: 6px; }
+  .reward-track button { min-height: 42px; }
+  .campaign-hub .hub-actions { margin-top: 5px; }
 }

@@ -94,3 +94,17 @@ test('结算会累计尝试但不会降低历史三星和记录', () => {
   assert.equal(second.currency.coins, 40)
   assert.equal(second.campaign.highestUnlockedLevel, 2)
 })
+
+test('第一章顺序通关后解锁第六关并保留五关记录', () => {
+  let save = createDefaultSave(1000)
+  for (let level = 1; level <= 5; level += 1) {
+    save = recordRunSettlement(save, {
+      mode: 'won', runId: level, level, score: 20000 + level,
+      maxCombo: 40, lives: 3, stars: 3, coins: level * 20, runCoinsEarned: 20,
+    }, 5000 + level)
+  }
+
+  assert.equal(save.campaign.highestUnlockedLevel, 6)
+  assert.deepEqual(Object.keys(save.campaign.levelRecords).map(Number), [1, 2, 3, 4, 5])
+  assert.ok(Object.values(save.campaign.levelRecords).every((record) => record.clears === 1 && record.stars === 3))
+})

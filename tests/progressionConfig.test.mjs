@@ -14,6 +14,16 @@ test('20 关按四章完整建模且每关都有可玩砖阵', () => {
   }
 })
 
+test('第一章五关使用正式独立布局且第五关配置三阶段 Boss', () => {
+  const firstChapter = LEVELS.slice(0, 5)
+  assert.equal(new Set(firstChapter.map((level) => level.layout.join('|'))).size, 5)
+  assert.deepEqual(firstChapter.map((level) => level.ballSpeedMultiplier), [1, 1.035, 1.065, 1.1, 1.12])
+  assert.equal(firstChapter[4].boss.codename, 'PRISM WARDEN')
+  assert.equal(firstChapter[4].boss.phases, 3)
+  assert.equal(firstChapter[4].boss.phaseLayouts.length, 3)
+  assert.equal(firstChapter[4].boss.phaseSpeeds.length, 3)
+})
+
 test('升级退款等于全部已购等级成本之和', () => {
   const upgrades = Object.fromEntries(UPGRADE_DEFINITIONS.map((definition) => [definition.key, Math.min(2, definition.maxLevel)]))
   const expected = UPGRADE_DEFINITIONS.reduce((total, definition) => total + definition.costs.slice(0, Math.min(2, definition.maxLevel)).reduce((sum, cost) => sum + cost, 0), 0)

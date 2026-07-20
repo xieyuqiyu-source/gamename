@@ -14,6 +14,7 @@ store.hydrateSave()
 const canvasRef = ref(null)
 const engineRef = shallowRef(null)
 const resetArmed = ref(false)
+const previewMode = ref(false)
 const starSlots = [1, 2, 3]
 
 const modeLabel = computed(() => MODE_LABELS[store.mode] || store.mode)
@@ -21,6 +22,7 @@ const record = computed(() => store.currentRecord)
 const isSettlement = computed(() => ['won', 'lost'].includes(store.mode))
 const showReturnButton = computed(() => ['briefing', 'won', 'lost'].includes(store.mode))
 const currentLevel = computed(() => getLevelConfig(store.level))
+const bossActive = computed(() => store.screen === 'game' && store.mode !== 'menu' ? store.boss : null)
 const canNavigate = computed(() => !['ready', 'playing', 'paused', 'countdown'].includes(store.mode))
 const saveStatusLabel = computed(() => {
   if (store.saveStatus === 'recovered') return '已恢复新存档'
@@ -100,6 +102,7 @@ function showTitle() {
 
 function playLevel(level) {
   if (!store.selectLevel(level.id)) return
+  previewMode.value = false
   const levelRecord = store.campaign.levelRecords[String(level.id)] || { highScore: 0 }
   engineRef.value?.configureLevel(level, {
     coins: store.currency.coins,
@@ -167,7 +170,7 @@ function createTextState(engine) {
 
 onMounted(() => {
   const engine = new GameEngine(canvasRef.value, {
-    onStateChange: (snapshot) => store.syncFromEngine(snapshot),
+    onStateChange: (snapshot) => store.syncFromEngine(snapshot, { settle: !previewMode.value }),
     startingCoins: store.currency.coins,
     startingBestScore: record.value.highScore,
     effectQuality: store.settings.effectQuality,
@@ -201,9 +204,64 @@ onMounted(() => {
         playLevel(level)
         return true
       },
+      previewLevel: (levelId) => {
+        previewMode.value = true
+        const level = getLevelConfig(levelId)
+        const levelRecord = store.campaign.levelRecords[String(level.id)] || { highScore: 0 }
+        engine.configureLevel(level, {
+          coins: store.currency.coins,
+          bestScore: levelRecord.highScore,
+          modifiers: getRunModifiers(store.upgrades),
+        })
+        store.screen = 'game'
+        return true
+      },
       purchase: (key) => store.purchaseUpgrade(key),
       resetUpgrades: () => store.resetUpgrades(),
       claimReward: (id) => store.claimStarReward(id),
+    }
+
+    const previewParams = new URLSearchParams(window.location.search)
+    const previewLevelId = Number(previewParams.get('preview'))
+    if (previewLevelId >= 1 && previewLevelId <= 20) {
+      previewMode.value = true
+      const previewLevel = getLevelConfig(previewLevelId)
+      const previewRecord = store.campaign.levelRecords[String(previewLevel.id)] || { highScore: 0 }
+      engine.configureLevel(previewLevel, {
+        coins: store.currency.coins,
+        bestScore: previewRecord.highScore,
+        modifiers: getRunModifiers(store.upgrades),
+      })
+      store.screen = 'game'
+      if (previewParams.get('autostart') === '1') {
+        engine.startNewGame()
+        if (previewParams.get('ready') !== '1') engine.launch()
+        const previewPhase = Math.min(3, Math.max(1, Number(previewParams.get('phase')) || 1))
+        if (previewLevel.boss && previewPhase > 1) {
+          engine.startBossPhase(previewPhase)
+          engine.state.boss.hp = previewLevel.boss.maxHp - (previewPhase - 1) * (previewLevel.boss.maxHp / previewLevel.boss.phases)
+          engine.touchState(); engine.publish(true); engine.render()
+        }
+        if (previewLevel.boss && previewParams.get('exposed') === '1') {
+          for (const brick of engine.state.bricks) brick.hp = 0
+          engine.breakBossShield()
+        }
+
+        const previewResult = previewParams.get('result')
+        if (previewResult === 'won') {
+          if (engine.state.boss) {
+            engine.state.boss.hp = 0
+            engine.state.boss.defeated = true
+            engine.state.boss.shieldActive = false
+            engine.state.boss.shieldNodes = 0
+          }
+          engine.debugWin()
+        }
+        if (previewResult === 'lost') {
+          engine.state.lives = 1
+          engine.debugLoseLife()
+        }
+      }
     }
   }
 })
@@ -225,7 +283,7 @@ onBeforeUnmount(() => {
       <div class="brand-lockup">
         <span class="brand-mark" aria-hidden="true"></span>
         <div>
-          <p>NEON ARCADE / BUILD 0.5</p>
+          <p>NEON ARCADE / BUILD 0.6</p>
           <h1>NEON BREAKER</h1>
         </div>
       </div>
@@ -237,7 +295,7 @@ onBeforeUnmount(() => {
         </nav>
         <div class="build-status">
           <span class="live-dot"></span>
-          永久成长框架
+          第一章作战内容
         </div>
       </div>
     </header>
@@ -274,7 +332,7 @@ onBeforeUnmount(() => {
         </dl>
 
         <div class="progress-block">
-          <div><span>清除进度</span><strong>{{ store.progressPercent }}%</strong></div>
+          <div><span>{{ bossActive ? '当前护盾' : '清除进度' }}</span><strong>{{ store.progressPercent }}%</strong></div>
           <div class="progress-track"><span :style="{ width: `${store.progressPercent}%` }"></span></div>
         </div>
 
@@ -315,10 +373,11 @@ onBeforeUnmount(() => {
 
         <div v-if="store.mode === 'briefing'" class="briefing-panel">
           <p>三星任务</p>
-          <div><i>Ⅰ</i><span>清除全部砖块</span></div>
+          <div><i>Ⅰ</i><span>{{ currentLevel.isBoss ? '击破三阶段棱镜核心' : '清除全部砖块' }}</span></div>
           <div><i>Ⅱ</i><span>至少剩余 2 条生命</span></div>
           <div><i>Ⅲ</i><span>{{ currentLevel.targetScore }} 分或 {{ currentLevel.targetCombo }} 连击</span></div>
           <small>清关奖励 ◈ {{ currentLevel.clearBonus }}</small>
+          <strong v-if="currentLevel.boss" class="boss-briefing">{{ currentLevel.boss.codename }} · {{ currentLevel.boss.phases }} PHASES · {{ currentLevel.boss.maxHp }} CORE</strong>
         </div>
 
         <div v-else-if="isSettlement" class="result-panel" :class="store.mode">
@@ -335,6 +394,13 @@ onBeforeUnmount(() => {
         </div>
 
         <template v-else>
+          <div v-if="bossActive" class="boss-terminal" :class="{ exposed: !bossActive.shieldActive }">
+            <header><span>BOSS SIGNAL</span><strong>P{{ bossActive.phase }} / {{ bossActive.maxPhases }}</strong></header>
+            <div><b>{{ bossActive.codename }}</b><small>{{ bossActive.shieldActive ? `护盾节点 ${bossActive.shieldNodes}` : '核心暴露' }}</small></div>
+            <p><i :style="{ width: `${bossActive.hp / bossActive.maxHp * 100}%` }"></i></p>
+            <footer><span>CORE {{ bossActive.hp }} / {{ bossActive.maxHp }}</span><strong>{{ bossActive.shieldActive ? 'SHIELDED' : 'ATTACK' }}</strong></footer>
+          </div>
+
           <div class="effect-rack">
             <div class="rack-heading"><span>ACTIVE MODULES</span><strong>{{ store.activeEffects.length }}</strong></div>
             <p v-if="!store.activeEffects.length" class="empty-effects">接住胶囊以激活战斗模块</p>
@@ -374,7 +440,7 @@ onBeforeUnmount(() => {
     <section v-show="['title', 'game'].includes(store.screen)" class="mobile-command-bar">
       <div>
         <span>♥ {{ store.lives }}</span>
-        <strong>{{ store.combo ? `${store.combo} 连击` : modeLabel }}</strong>
+        <strong>{{ bossActive ? `BOSS P${bossActive.phase} · ${bossActive.shieldActive ? `盾 ${bossActive.shieldNodes}` : `核 ${bossActive.hp}`}` : store.combo ? `${store.combo} 连击` : modeLabel }}</strong>
         <span>◈ {{ store.coins }}</span>
       </div>
       <div v-if="isSettlement" class="mobile-result">
@@ -397,8 +463,8 @@ onBeforeUnmount(() => {
 
     <footer v-show="['title', 'game'].includes(store.screen)" class="game-footer">
       <span>CAMPAIGN &amp; PROGRESSION</span>
-      <p>20 关星图 · 7 类永久强化 · 星级奖励 · 数据驱动战斗</p>
-      <strong>v0.5.0</strong>
+      <p>第一章 5 关 · 三阶段棱镜核心 · 永久强化 · 双端战斗</p>
+      <strong>v0.6.0</strong>
     </footer>
   </main>
 </template>
