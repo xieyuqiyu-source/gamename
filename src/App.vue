@@ -12,6 +12,7 @@ import { useGameStore } from './stores/game'
 
 const store = useGameStore()
 store.hydrateSave()
+const brandIconUrl = `${import.meta.env.BASE_URL}favicon.svg`
 
 const devPreviewParams = import.meta.env.DEV ? new URLSearchParams(window.location.search) : null
 const requestedPreviewQuality = devPreviewParams?.get('quality')
@@ -370,10 +371,10 @@ onBeforeUnmount(() => {
   <main class="game-app" :data-mode="store.mode">
     <header class="game-header">
       <div class="brand-lockup">
-        <span class="brand-mark" aria-hidden="true"></span>
+        <img class="brand-mark" :src="brandIconUrl" alt="" aria-hidden="true" />
         <div>
-          <p>NEON ARCADE / BUILD 0.9</p>
-          <h1>NEON BREAKER</h1>
+          <p>NEON ARCADE / RELEASE 1.0</p>
+          <h1><span>霓虹破界</span><small>NEON BREAKER</small></h1>
         </div>
       </div>
       <div class="header-actions">
@@ -385,7 +386,7 @@ onBeforeUnmount(() => {
         </nav>
         <div class="build-status">
           <span class="live-dot"></span>
-          性能校准与兼容收口
+          正式版 · 全内容上线
         </div>
       </div>
     </header>
@@ -460,7 +461,7 @@ onBeforeUnmount(() => {
           ref="canvasRef"
           width="540"
           height="960"
-          aria-label="霓虹打砖块游戏战场"
+          aria-label="霓虹破界游戏战场"
         ></canvas>
       </section>
 
@@ -580,9 +581,9 @@ onBeforeUnmount(() => {
     </section>
 
     <footer v-show="['title', 'game'].includes(store.screen)" class="game-footer">
-      <span>CAMPAIGN &amp; PROGRESSION</span>
+      <span>ARCADE CAMPAIGN COMPLETE</span>
       <p>20 关全章节 · 四大核心 · 组合弹幕 · 双端战斗</p>
-      <strong>v0.9.0</strong>
+      <strong>v1.0.0</strong>
     </footer>
   </main>
 </template>

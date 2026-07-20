@@ -32,9 +32,11 @@ button:focus-visible, canvas:focus-visible { outline: 2px solid #ffd166; outline
 
 .game-header { display: flex; align-items: center; justify-content: space-between; min-height: 70px; margin-bottom: 18px; }
 .brand-lockup { display: flex; align-items: center; gap: 13px; }
-.brand-mark { width: 10px; height: 44px; border-radius: 999px; background: linear-gradient(#55f4dd, #a06cff); box-shadow: 0 0 22px rgba(85, 244, 221, 0.62); }
+.brand-mark { width: 46px; height: 46px; flex: 0 0 auto; filter: drop-shadow(0 0 16px rgba(85, 244, 221, .24)); }
 .brand-lockup p { margin: 0 0 4px; color: #58d5c2; font-size: 10px; font-weight: 800; letter-spacing: 0.18em; }
-.brand-lockup h1 { margin: 0; color: #f1fffc; font-size: clamp(25px, 3vw, 37px); line-height: 1; letter-spacing: 0.04em; }
+.brand-lockup h1 { display: flex; align-items: baseline; gap: 9px; margin: 0; color: #f1fffc; line-height: 1; }
+.brand-lockup h1 span { font-size: clamp(23px, 2.6vw, 33px); letter-spacing: .08em; }
+.brand-lockup h1 small { color: #819f9f; font: 850 10px ui-monospace, monospace; letter-spacing: .12em; }
 .build-status { display: flex; align-items: center; gap: 8px; padding: 9px 13px; border: 1px solid #1e3e45; border-radius: 999px; color: #8aabaa; background: rgba(10, 24, 32, 0.76); font-size: 12px; }
 .live-dot { width: 7px; height: 7px; border-radius: 50%; background: #55f4dd; box-shadow: 0 0 12px #55f4dd; }
 .header-actions { display: flex; align-items: center; gap: 10px; }
@@ -184,9 +186,10 @@ kbd { min-width: 28px; height: 27px; display: inline-grid; place-items: center; 
   .game-app { padding: max(12px, var(--safe-top)) max(10px, var(--safe-right)) max(6px, var(--safe-bottom)) max(10px, var(--safe-left)); }
   .game-app:has(.hub-view) { padding-bottom: 0; }
   .game-header { min-height: 54px; margin-bottom: 10px; }
-  .brand-mark { width: 7px; height: 34px; }
+  .brand-mark { width: 36px; height: 36px; }
   .brand-lockup p { font-size: 8px; }
-  .brand-lockup h1 { font-size: 22px; }
+  .brand-lockup h1 span { font-size: 20px; }
+  .brand-lockup h1 small { display: none; }
   .build-status { padding: 7px 9px; font-size: 9px; }
   .header-actions { gap: 5px; }
   .global-nav button { min-width: 39px; min-height: 40px; padding: 0 7px; font-size: 8px; }
@@ -216,9 +219,9 @@ kbd { min-width: 28px; height: 27px; display: inline-grid; place-items: center; 
 @media (max-width: 390px) {
   .build-status { display: none; }
   .brand-lockup { gap: 7px; }
-  .brand-mark { width: 5px; }
+  .brand-mark { width: 31px; height: 31px; }
   .brand-lockup p { display: none; }
-  .brand-lockup h1 { font-size: 18px; }
+  .brand-lockup h1 span { font-size: 17px; }
   .global-nav button { min-width: 32px; padding: 0 4px; }
   .playfield-shell { width: min(100%, calc((100vh - 192px) * 9 / 16)); width: min(100%, calc((100svh - 192px) * 9 / 16)); }
 }

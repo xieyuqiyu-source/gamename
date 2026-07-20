@@ -1,0 +1,20 @@
+{
+  "name": "霓虹破界：Neon Breaker",
+  "short_name": "霓虹破界",
+  "description": "纯前端竖屏霓虹街机打砖块游戏：20 关主线、4 个 Boss、永久升级与无尽模式。",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#050b12",
+  "theme_color": "#091017",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

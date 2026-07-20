@@ -20,7 +20,7 @@ const defaultSave = createDefaultSave()
 
 export const useGameStore = defineStore('game', {
   state: () => ({
-    projectName: 'Neon Breaker',
+    projectName: '霓虹破界：Neon Breaker',
     saveVersion: defaultSave.saveVersion,
     profile: defaultSave.profile,
     currency: defaultSave.currency,

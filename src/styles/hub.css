@@ -315,6 +315,7 @@
   .settings-hero h2 { font-size: 22px; }
   .settings-hero > div:first-child > span { display: none; }
   .settings-card, .performance-terminal { padding: 9px; }
+  .quality-options { grid-template-columns: repeat(4, minmax(0, 1fr)); overflow-x: visible; }
   .quality-options button { min-height: 102px; }
   .quality-options button > small { display: none; }
   .setting-switches button > span small { display: none; }
