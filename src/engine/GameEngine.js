@@ -35,11 +35,17 @@ function createBricks() {
 }
 
 export class GameEngine {
-  constructor(canvas, { onStateChange, startingCoins = 0, effectQuality = 'high' } = {}) {
+  constructor(canvas, {
+    onStateChange,
+    startingCoins = 0,
+    startingBestScore = 0,
+    effectQuality = 'high',
+  } = {}) {
     this.canvas = canvas
     this.ctx = canvas.getContext('2d')
     this.onStateChange = onStateChange
     this.startingCoins = startingCoins
+    this.startingBestScore = startingBestScore
     this.effectQuality = effectQuality
     this.rafId = null
     this.lastTimestamp = 0
@@ -59,9 +65,11 @@ export class GameEngine {
     this.randomSeed = 0x2f6e2b1
     this.nextBallId = 1
     this.nextDropId = 1
+    this.nextRunId = 1
     this.stateVersion = 0
     this.lastPublishedVersion = -1
     this.uiPublishTimer = 0
+    this.countdownPublishTimer = 0
     this.state = this.createInitialState()
 
     this.handleKeyDown = this.handleKeyDown.bind(this)
@@ -69,17 +77,22 @@ export class GameEngine {
     this.handlePointerMove = this.handlePointerMove.bind(this)
     this.handlePointerDown = this.handlePointerDown.bind(this)
     this.handleContextMenu = this.handleContextMenu.bind(this)
+    this.handleVisibilityChange = this.handleVisibilityChange.bind(this)
+    this.handleWindowBlur = this.handleWindowBlur.bind(this)
     this.loop = this.loop.bind(this)
   }
 
   createInitialState() {
     return {
-      mode: 'menu', level: 1, levelName: LEVEL_ONE.name, lives: 3,
-      score: 0, bestScore: 0, coins: this.startingCoins || 0,
+      mode: 'menu', runId: 0, level: 1, levelName: LEVEL_ONE.name, lives: 3,
+      score: 0, bestScore: this.startingBestScore || 0, coins: this.startingCoins || 0,
+      runStartCoins: this.startingCoins || 0, clearBonus: 0, stars: 0,
+      starBreakdown: { clear: false, survivor: false, mastery: false },
       combo: 0, maxCombo: 0, comboTimer: 0, destroyedCount: 0,
       bricks: createBricks(),
       paddle: { x: (GAME_WIDTH - PADDLE.width) / 2, y: PADDLE.y, w: PADDLE.width, h: PADDLE.height, velocityX: 0 },
       balls: [], drops: [], message: '准备进入霓虹试炼', laserCooldown: 0,
+      resumeCountdown: 0,
       powerups: {
         expand: { remaining: 0, stacks: 0 }, pierce: { remaining: 0 },
         slow: { remaining: 0 }, laser: { remaining: 0 },
@@ -90,6 +103,8 @@ export class GameEngine {
   start() {
     window.addEventListener('keydown', this.handleKeyDown)
     window.addEventListener('keyup', this.handleKeyUp)
+    window.addEventListener('blur', this.handleWindowBlur)
+    document.addEventListener('visibilitychange', this.handleVisibilityChange)
     this.canvas.addEventListener('pointermove', this.handlePointerMove)
     this.canvas.addEventListener('pointerdown', this.handlePointerDown)
     this.canvas.addEventListener('contextmenu', this.handleContextMenu)
@@ -103,6 +118,8 @@ export class GameEngine {
     cancelAnimationFrame(this.rafId)
     window.removeEventListener('keydown', this.handleKeyDown)
     window.removeEventListener('keyup', this.handleKeyUp)
+    window.removeEventListener('blur', this.handleWindowBlur)
+    document.removeEventListener('visibilitychange', this.handleVisibilityChange)
     this.canvas.removeEventListener('pointermove', this.handlePointerMove)
     this.canvas.removeEventListener('pointerdown', this.handlePointerDown)
     this.canvas.removeEventListener('contextmenu', this.handleContextMenu)
@@ -110,15 +127,44 @@ export class GameEngine {
 
   startNewGame() {
     const { bestScore, coins } = this.state
-    const maxCombo = this.state.maxCombo
     this.startingCoins = coins
+    this.startingBestScore = bestScore
     this.state = this.createInitialState()
-    this.state.bestScore = Math.max(bestScore, this.state.score)
-    this.state.maxCombo = maxCombo
+    this.state.runId = this.nextRunId++
+    this.state.runStartCoins = coins
     this.state.mode = 'ready'
     this.state.message = '移动挡板 · 点击或按空格发球'
     this.clearTransientEffects()
     this.spawnAttachedBall()
+    this.touchState(); this.publish(true); this.render()
+  }
+
+  openBriefing() {
+    const { bestScore, coins } = this.state
+    this.startingCoins = coins
+    this.startingBestScore = bestScore
+    this.state = this.createInitialState()
+    this.state.mode = 'briefing'
+    this.state.message = '确认任务目标后开始挑战'
+    this.clearTransientEffects()
+    this.touchState(); this.publish(true); this.render()
+  }
+
+  returnToMenu() {
+    const { bestScore, coins } = this.state
+    this.startingCoins = coins
+    this.startingBestScore = bestScore
+    this.state = this.createInitialState()
+    this.state.message = '存档已同步 · 等待进入任务'
+    this.clearTransientEffects()
+    this.touchState(); this.publish(true); this.render()
+  }
+
+  loadProfile({ coins = 0, bestScore = 0 } = {}) {
+    this.startingCoins = coins
+    this.startingBestScore = bestScore
+    this.state = this.createInitialState()
+    this.clearTransientEffects()
     this.touchState(); this.publish(true); this.render()
   }
 
@@ -156,11 +202,43 @@ export class GameEngine {
 
   togglePause() {
     if (this.state.mode === 'playing') {
-      this.state.mode = 'paused'; this.state.message = '游戏已暂停'
+      this.pauseGame('游戏已暂停')
     } else if (this.state.mode === 'paused') {
-      this.state.mode = 'playing'; this.state.message = '继续挑战'
+      this.beginResumeCountdown()
+    } else if (this.state.mode === 'countdown') {
+      this.pauseGame('已取消继续')
     } else return
+  }
+
+  pauseGame(message = '游戏已暂停') {
+    if (!['playing', 'countdown'].includes(this.state.mode)) return false
+    this.state.mode = 'paused'
+    this.state.resumeCountdown = 0
+    this.state.message = message
+    this.keys.clear()
+    this.pointerTargetX = null
     this.touchState(); this.publish(true); this.render()
+    return true
+  }
+
+  beginResumeCountdown() {
+    if (this.state.mode !== 'paused') return false
+    this.state.mode = 'countdown'
+    this.state.resumeCountdown = 3
+    this.countdownPublishTimer = 0
+    this.state.message = '3 秒后继续'
+    this.keys.clear()
+    this.pointerTargetX = null
+    this.touchState(); this.publish(true); this.render()
+    return true
+  }
+
+  handleVisibilityChange() {
+    if (document.hidden) this.pauseGame('页面进入后台 · 已自动暂停')
+  }
+
+  handleWindowBlur() {
+    this.pauseGame('页面失去焦点 · 已自动暂停')
   }
 
   fireLaser() {
@@ -181,9 +259,11 @@ export class GameEngine {
     if (['arrowleft', 'arrowright', 'a', 'd', ' ', 'enter'].includes(key)) event.preventDefault()
     this.keys.add(key)
     if (key === ' ' || key === 'enter') {
-      if (['menu', 'won', 'lost'].includes(this.state.mode)) this.startNewGame()
+      if (this.state.mode === 'menu') this.openBriefing()
+      else if (this.state.mode === 'briefing') this.startNewGame()
+      else if (['won', 'lost'].includes(this.state.mode)) this.startNewGame()
       else if (this.state.mode === 'ready') this.launch()
-      else if (this.state.mode === 'paused') this.togglePause()
+      else if (['paused', 'countdown'].includes(this.state.mode)) this.togglePause()
       else this.fireLaser()
     }
     if (key === 'escape' || key === 'p') this.togglePause()
@@ -198,9 +278,11 @@ export class GameEngine {
   handlePointerDown(event) {
     this.canvas.setPointerCapture?.(event.pointerId)
     this.pointerTargetX = this.canvasPoint(event).x
-    if (['menu', 'won', 'lost'].includes(this.state.mode)) this.startNewGame()
+    if (this.state.mode === 'menu') this.openBriefing()
+    else if (this.state.mode === 'briefing') this.startNewGame()
+    else if (['won', 'lost'].includes(this.state.mode)) this.startNewGame()
     else if (this.state.mode === 'ready') this.launch()
-    else if (this.state.mode === 'paused') this.togglePause()
+    else if (['paused', 'countdown'].includes(this.state.mode)) this.togglePause()
     else this.fireLaser()
   }
   handleContextMenu(event) { event.preventDefault() }
@@ -225,6 +307,22 @@ export class GameEngine {
   }
 
   update(dt) {
+    if (this.state.mode === 'paused') return
+    if (this.state.mode === 'countdown') {
+      this.state.resumeCountdown = Math.max(0, this.state.resumeCountdown - dt)
+      this.countdownPublishTimer += dt
+      if (this.state.resumeCountdown <= 0) {
+        this.state.resumeCountdown = 0
+        this.state.mode = 'playing'
+        this.state.message = '继续挑战'
+        this.touchState(); this.publish(true)
+      } else if (this.countdownPublishTimer >= 0.1) {
+        this.countdownPublishTimer = 0
+        this.state.message = `${Math.ceil(this.state.resumeCountdown)} 秒后继续`
+        this.touchState(); this.publish()
+      }
+      return
+    }
     if (this.hitStop > 0) {
       this.hitStop = Math.max(0, this.hitStop - dt)
       this.updateEffects(dt)
@@ -513,7 +611,9 @@ export class GameEngine {
     this.resizePaddle(PADDLE.width)
     this.trail.length = 0; this.shake = 6; this.touchState()
     if (this.state.lives <= 0) {
-      this.state.balls = []; this.state.mode = 'lost'; this.state.message = '光能耗尽 · 再试一次'
+      this.state.balls = []; this.state.mode = 'lost'; this.state.message = '光能耗尽 · 本局收益已保存'
+      this.state.stars = 0
+      this.state.starBreakdown = { clear: false, survivor: false, mastery: false }
     } else {
       this.state.mode = 'ready'; this.state.message = `能量重置 · 剩余 ${this.state.lives}`; this.spawnAttachedBall()
     }
@@ -522,7 +622,17 @@ export class GameEngine {
 
   winLevel() {
     if (this.state.mode === 'won') return
-    this.state.mode = 'won'; this.state.message = '全部砖块已清除'
+    const starBreakdown = {
+      clear: true,
+      survivor: this.state.lives >= 2,
+      mastery: this.state.score >= LEVEL_ONE.targetScore || this.state.maxCombo >= LEVEL_ONE.targetCombo,
+    }
+    this.state.stars = Object.values(starBreakdown).filter(Boolean).length
+    this.state.starBreakdown = starBreakdown
+    this.state.clearBonus = LEVEL_ONE.clearBonus
+    this.state.coins += LEVEL_ONE.clearBonus
+    this.state.balls = []
+    this.state.mode = 'won'; this.state.message = `任务完成 · ${this.state.stars} 星评价`
     this.state.combo = 0; this.state.comboTimer = 0
     this.state.drops = []; this.projectiles = []
     for (const type of ['expand', 'pierce', 'slow', 'laser']) {
@@ -588,21 +698,40 @@ export class GameEngine {
 
   getSummary() {
     return {
-      mode: this.state.mode, level: this.state.level, levelName: this.state.levelName,
+      mode: this.state.mode, runId: this.state.runId, level: this.state.level, levelName: this.state.levelName,
       lives: this.state.lives, score: this.state.score, bestScore: this.state.bestScore,
-      coins: this.state.coins, combo: this.state.combo, maxCombo: this.state.maxCombo,
+      coins: this.state.coins,
+      runCoinsEarned: Math.max(0, this.state.coins - this.state.runStartCoins),
+      clearBonus: this.state.clearBonus,
+      stars: this.state.stars,
+      starBreakdown: { ...this.state.starBreakdown },
+      combo: this.state.combo, maxCombo: this.state.maxCombo,
       ballCount: this.state.balls.length, dropCount: this.state.drops.length,
       activeEffects: this.activeEffects(), bricksRemaining: this.remainingBricks(),
       totalBricks: this.state.bricks.length, message: this.state.message,
+      resumeCountdown: Number(this.state.resumeCountdown.toFixed(1)),
     }
   }
 
   getTextState() {
     return JSON.stringify({
       coordinateSystem: `canvas ${GAME_WIDTH}x${GAME_HEIGHT}; origin top-left; x right; y down`,
-      mode: this.state.mode, level: { id: this.state.level, name: this.state.levelName },
+      mode: this.state.mode, runId: this.state.runId,
+      level: {
+        id: this.state.level,
+        name: this.state.levelName,
+        targetScore: LEVEL_ONE.targetScore,
+        targetCombo: LEVEL_ONE.targetCombo,
+      },
       lives: this.state.lives, score: this.state.score, coins: this.state.coins,
+      runCoinsEarned: Math.max(0, this.state.coins - this.state.runStartCoins),
+      settlement: {
+        stars: this.state.stars,
+        starBreakdown: this.state.starBreakdown,
+        clearBonus: this.state.clearBonus,
+      },
       combo: this.state.combo, maxCombo: this.state.maxCombo, message: this.state.message,
+      resumeCountdown: Number(this.state.resumeCountdown.toFixed(1)),
       paddle: { x: +this.state.paddle.x.toFixed(1), y: this.state.paddle.y, width: +this.state.paddle.w.toFixed(1), velocityX: +this.state.paddle.velocityX.toFixed(1) },
       balls: this.state.balls.map((ball) => ({ id: ball.id, x: +ball.x.toFixed(1), y: +ball.y.toFixed(1), vx: +ball.vx.toFixed(1), vy: +ball.vy.toFixed(1), radius: ball.r, stuck: ball.stuck })),
       bricks: this.state.bricks.filter((brick) => brick.hp > 0).map((brick) => ({ id: brick.id, x: +brick.x.toFixed(1), y: brick.y, width: +brick.w.toFixed(1), height: brick.h, hp: brick.hp, maxHp: brick.maxHp })),
@@ -615,9 +744,12 @@ export class GameEngine {
   }
 
   availableActions() {
-    if (['menu', 'won', 'lost'].includes(this.state.mode)) return ['start or restart', 'F fullscreen']
+    if (this.state.mode === 'menu') return ['open mission briefing', 'F fullscreen']
+    if (this.state.mode === 'briefing') return ['start level', 'return to title', 'F fullscreen']
+    if (['won', 'lost'].includes(this.state.mode)) return ['retry level', 'return to title', 'F fullscreen']
     if (this.state.mode === 'ready') return ['move paddle', 'launch with click/Space', 'F fullscreen']
-    if (this.state.mode === 'paused') return ['resume with click/Space/P', 'F fullscreen']
+    if (this.state.mode === 'paused') return ['resume with 3-second countdown', 'F fullscreen']
+    if (this.state.mode === 'countdown') return ['wait for countdown', 'cancel resume with click/Space/P', 'F fullscreen']
     const actions = ['move paddle', 'pause with Esc/P', 'F fullscreen']
     if (this.state.powerups.laser.remaining > 0) actions.push('fire laser with click/Space')
     return actions
@@ -625,8 +757,9 @@ export class GameEngine {
 
   render() {
     const ctx = this.ctx
-    const sx = this.shake ? (Math.random() - 0.5) * this.shake : 0
-    const sy = this.shake ? (Math.random() - 0.5) * this.shake : 0
+    const canShake = ['ready', 'playing'].includes(this.state.mode)
+    const sx = canShake && this.shake ? (Math.random() - 0.5) * this.shake : 0
+    const sy = canShake && this.shake ? (Math.random() - 0.5) * this.shake : 0
     ctx.save(); ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT); ctx.translate(sx, sy)
     this.drawBackground(ctx); this.drawHud(ctx); this.drawBricks(ctx); this.drawTrail(ctx)
     this.drawDrops(ctx); this.drawProjectiles(ctx); this.drawPaddle(ctx); this.drawBalls(ctx)
@@ -758,22 +891,103 @@ export class GameEngine {
     }
     ctx.fillStyle = 'rgba(4,9,18,.82)'; ctx.fillRect(14, 112, GAME_WIDTH - 28, GAME_HEIGHT - 128); ctx.textAlign = 'center'
     if (mode === 'menu') {
-      ctx.fillStyle = COLORS.cyan; ctx.font = '800 16px system-ui'; ctx.fillText('CHAPTER 01', GAME_WIDTH / 2, 274)
-      ctx.fillStyle = COLORS.text; ctx.font = '900 46px system-ui'; ctx.fillText('NEON', GAME_WIDTH / 2, 340); ctx.fillText('BREAKER', GAME_WIDTH / 2, 391)
-      ctx.fillStyle = COLORS.muted; ctx.font = '600 15px system-ui'; ctx.fillText('5 种道具 · 连击 · 晶币掉落', GAME_WIDTH / 2, 432)
-      this.drawOverlayButton(ctx, '开始试炼', 632)
+      ctx.fillStyle = COLORS.cyan; ctx.font = '800 14px system-ui'; ctx.fillText('CAMPAIGN / CHAPTER 01', GAME_WIDTH / 2, 252)
+      ctx.fillStyle = COLORS.text; ctx.font = '900 48px system-ui'; ctx.fillText('NEON', GAME_WIDTH / 2, 326); ctx.fillText('BREAKER', GAME_WIDTH / 2, 379)
+      ctx.fillStyle = COLORS.muted; ctx.font = '600 15px system-ui'; ctx.fillText('原创霓虹街机 · 本地单机存档', GAME_WIDTH / 2, 423)
+      ctx.strokeStyle = 'rgba(85,244,221,.18)'; ctx.beginPath(); ctx.moveTo(142, 472); ctx.lineTo(GAME_WIDTH - 142, 472); ctx.stroke()
+      ctx.fillStyle = COLORS.gold; ctx.font = '800 13px system-ui'; ctx.fillText(`◈ ${this.state.coins} 晶币已同步`, GAME_WIDTH / 2, 507)
+      this.drawOverlayButton(ctx, '进入任务', 632)
+      ctx.fillStyle = COLORS.muted; ctx.font = '500 12px system-ui'; ctx.fillText('点击战场或按 ENTER', GAME_WIDTH / 2, 718)
+    } else if (mode === 'briefing') {
+      ctx.fillStyle = COLORS.cyan; ctx.font = '900 13px system-ui'; ctx.fillText('MISSION BRIEFING', GAME_WIDTH / 2, 208)
+      ctx.fillStyle = COLORS.text; ctx.font = '900 34px system-ui'; ctx.fillText('01 · 初次折射', GAME_WIDTH / 2, 260)
+      ctx.fillStyle = COLORS.muted; ctx.font = '500 13px system-ui'; ctx.fillText('击碎棱镜阵列，掌握反弹与能量模块', GAME_WIDTH / 2, 292)
+
+      const criteria = [
+        ['Ⅰ', '完成关卡', '清除全部砖块', COLORS.cyan],
+        ['Ⅱ', '保持能量', '剩余至少 2 条生命', COLORS.magenta],
+        ['Ⅲ', '达成精通', `${LEVEL_ONE.targetScore} 分或 ${LEVEL_ONE.targetCombo} 连击`, COLORS.gold],
+      ]
+      criteria.forEach(([number, title, detail, color], index) => {
+        const y = 346 + index * 78
+        ctx.fillStyle = 'rgba(9,25,36,.86)'; ctx.strokeStyle = `${color}55`; ctx.lineWidth = 1
+        ctx.beginPath(); ctx.roundRect(76, y, GAME_WIDTH - 152, 60, 12); ctx.fill(); ctx.stroke()
+        ctx.textAlign = 'left'; ctx.fillStyle = color; ctx.font = '900 15px system-ui'; ctx.fillText(number, 96, y + 26)
+        ctx.fillStyle = COLORS.text; ctx.font = '800 13px system-ui'; ctx.fillText(title, 132, y + 24)
+        ctx.fillStyle = COLORS.muted; ctx.font = '500 11px system-ui'; ctx.fillText(detail, 132, y + 43)
+      })
+      ctx.textAlign = 'center'; this.drawOverlayButton(ctx, '开始挑战', 626)
+      ctx.fillStyle = COLORS.muted; ctx.font = '500 12px system-ui'; ctx.fillText('3 条生命 · 通关奖励 20 晶币', GAME_WIDTH / 2, 714)
     } else if (mode === 'paused') {
       ctx.fillStyle = COLORS.text; ctx.font = '900 40px system-ui'; ctx.fillText('已暂停', GAME_WIDTH / 2, 418)
-      ctx.fillStyle = COLORS.muted; ctx.font = '500 15px system-ui'; ctx.fillText('点击、空格或 P 继续', GAME_WIDTH / 2, 456)
+      ctx.fillStyle = COLORS.muted; ctx.font = '500 15px system-ui'; ctx.fillText('点击、空格或 P 启动恢复倒计时', GAME_WIDTH / 2, 456)
+    } else if (mode === 'countdown') {
+      ctx.fillStyle = COLORS.cyan; ctx.font = '900 16px system-ui'; ctx.fillText('READY TO RESUME', GAME_WIDTH / 2, 360)
+      ctx.fillStyle = COLORS.text; ctx.font = '950 92px ui-monospace, monospace'; ctx.fillText(String(Math.max(1, Math.ceil(this.state.resumeCountdown))), GAME_WIDTH / 2, 468)
+      ctx.fillStyle = COLORS.muted; ctx.font = '500 14px system-ui'; ctx.fillText('再次点击、空格或 P 可取消', GAME_WIDTH / 2, 512)
     } else if (mode === 'won') {
-      ctx.fillStyle = COLORS.gold; ctx.font = '900 42px system-ui'; ctx.fillText('CLEAR!', GAME_WIDTH / 2, 346)
-      ctx.fillStyle = COLORS.text; ctx.font = '800 22px system-ui'; ctx.fillText('初次折射 · 完成', GAME_WIDTH / 2, 390)
-      ctx.fillStyle = COLORS.muted; ctx.font = '600 15px system-ui'; ctx.fillText(`得分 ${this.state.score} · 晶币 ${this.state.coins}`, GAME_WIDTH / 2, 430); this.drawOverlayButton(ctx, '再次挑战', 600)
+      this.drawSettlement(ctx, true)
     } else if (mode === 'lost') {
-      ctx.fillStyle = COLORS.danger; ctx.font = '900 38px system-ui'; ctx.fillText('ENERGY LOST', GAME_WIDTH / 2, 352)
-      ctx.fillStyle = COLORS.text; ctx.font = '800 20px system-ui'; ctx.fillText('三次机会已经用尽', GAME_WIDTH / 2, 396)
-      ctx.fillStyle = COLORS.muted; ctx.font = '600 15px system-ui'; ctx.fillText(`得分 ${this.state.score} · 晶币保留`, GAME_WIDTH / 2, 434); this.drawOverlayButton(ctx, '重新挑战', 600)
+      this.drawSettlement(ctx, false)
     }
+  }
+
+  drawSettlement(ctx, won) {
+    ctx.textAlign = 'center'
+    ctx.fillStyle = won ? COLORS.gold : COLORS.danger
+    ctx.font = '900 13px system-ui'
+    ctx.fillText(won ? 'MISSION COMPLETE' : 'MISSION FAILED', GAME_WIDTH / 2, 208)
+    ctx.fillStyle = COLORS.text; ctx.font = '900 31px system-ui'
+    ctx.fillText(won ? '初次折射 · 已完成' : '能量耗尽', GAME_WIDTH / 2, 256)
+
+    for (let index = 0; index < 3; index += 1) {
+      this.drawStarIcon(ctx, GAME_WIDTH / 2 + (index - 1) * 66, 322, 24, won && index < this.state.stars)
+    }
+
+    ctx.fillStyle = COLORS.muted; ctx.font = '700 11px system-ui'; ctx.fillText('FINAL SCORE', GAME_WIDTH / 2, 382)
+    ctx.fillStyle = COLORS.text; ctx.font = '900 37px ui-monospace, monospace'; ctx.fillText(String(this.state.score).padStart(6, '0'), GAME_WIDTH / 2, 425)
+
+    const stats = [
+      ['最高连击', `${this.state.maxCombo}`, COLORS.magenta],
+      ['本局晶币', `+${Math.max(0, this.state.coins - this.state.runStartCoins)}`, COLORS.gold],
+      ['剩余生命', `${this.state.lives}`, COLORS.cyan],
+    ]
+    stats.forEach(([label, value, color], index) => {
+      const x = 66 + index * 140
+      ctx.fillStyle = 'rgba(9,25,36,.88)'; ctx.strokeStyle = `${color}44`; ctx.lineWidth = 1
+      ctx.beginPath(); ctx.roundRect(x, 466, 128, 76, 12); ctx.fill(); ctx.stroke()
+      ctx.fillStyle = COLORS.muted; ctx.font = '600 10px system-ui'; ctx.fillText(label, x + 64, 491)
+      ctx.fillStyle = color; ctx.font = '900 21px ui-monospace, monospace'; ctx.fillText(value, x + 64, 522)
+    })
+
+    if (won) {
+      ctx.fillStyle = 'rgba(255,209,102,.08)'; ctx.strokeStyle = 'rgba(255,209,102,.28)'
+      ctx.beginPath(); ctx.roundRect(96, 568, GAME_WIDTH - 192, 48, 10); ctx.fill(); ctx.stroke()
+      ctx.fillStyle = COLORS.gold; ctx.font = '800 12px system-ui'; ctx.fillText(`清关奖励 +${this.state.clearBonus} 晶币 · 记录已保存`, GAME_WIDTH / 2, 598)
+    } else {
+      ctx.fillStyle = COLORS.muted; ctx.font = '600 12px system-ui'; ctx.fillText('已获得晶币和最高记录均已保存', GAME_WIDTH / 2, 596)
+    }
+    this.drawOverlayButton(ctx, won ? '再次挑战' : '重新挑战', 650)
+    ctx.fillStyle = COLORS.muted; ctx.font = '500 11px system-ui'; ctx.fillText('可从右侧操作终端返回标题', GAME_WIDTH / 2, 738)
+  }
+
+  drawStarIcon(ctx, x, y, radius, active) {
+    ctx.save()
+    ctx.beginPath()
+    for (let point = 0; point < 10; point += 1) {
+      const angle = -Math.PI / 2 + point * Math.PI / 5
+      const distance = point % 2 === 0 ? radius : radius * 0.45
+      const px = x + Math.cos(angle) * distance
+      const py = y + Math.sin(angle) * distance
+      if (point === 0) ctx.moveTo(px, py)
+      else ctx.lineTo(px, py)
+    }
+    ctx.closePath()
+    ctx.fillStyle = active ? COLORS.gold : 'rgba(117,148,157,.12)'
+    ctx.strokeStyle = active ? '#fff0ac' : 'rgba(117,148,157,.32)'
+    ctx.lineWidth = 2
+    if (active) { ctx.shadowColor = COLORS.gold; ctx.shadowBlur = 20 }
+    ctx.fill(); ctx.stroke(); ctx.restore()
   }
 
   drawOverlayButton(ctx, label, y) {
@@ -784,7 +998,7 @@ export class GameEngine {
   }
 
   debugApplyPowerup(type) {
-    if (this.state.mode === 'menu') this.startNewGame()
+    if (['menu', 'briefing', 'won', 'lost'].includes(this.state.mode)) this.startNewGame()
     if (this.state.mode === 'ready') this.launch()
     const result = this.applyPowerup(type); this.publish(true); this.render(); return result
   }
@@ -794,7 +1008,7 @@ export class GameEngine {
     this.touchState(); this.publish(true); this.render()
   }
   debugLoseLife() { if (!['ready', 'playing'].includes(this.state.mode)) this.startNewGame(); this.state.balls = []; this.loseBall(); this.render() }
-  debugWin() { if (this.state.mode === 'menu') this.startNewGame(); for (const brick of this.state.bricks) brick.hp = 0; this.winLevel(); this.render() }
+  debugWin() { if (!['ready', 'playing'].includes(this.state.mode)) this.startNewGame(); for (const brick of this.state.bricks) brick.hp = 0; this.winLevel(); this.render() }
 }
 
 function paddleTop(paddle) { return paddle.y - 8 }

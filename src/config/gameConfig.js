@@ -47,6 +47,11 @@ export const DROP = {
 export const LEVEL_ONE = {
   id: 1,
   name: '初次折射',
+  chapter: '霓虹启程',
+  description: '击碎棱镜阵列，熟悉反弹、连击与能量模块。',
+  targetScore: 15000,
+  targetCombo: 35,
+  clearBonus: 20,
   columns: 9,
   rows: 7,
   left: 34,
@@ -58,9 +63,11 @@ export const LEVEL_ONE = {
 
 export const MODE_LABELS = {
   menu: '等待开始',
+  briefing: '任务准备',
   ready: '准备发球',
   playing: '游戏进行中',
   paused: '游戏已暂停',
+  countdown: '即将继续',
   won: '关卡完成',
   lost: '挑战失败',
 }
