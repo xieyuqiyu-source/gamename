@@ -1,150 +1,152 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
+import { MODE_LABELS } from './config/gameConfig'
+import { GameEngine } from './engine/GameEngine'
 import { useGameStore } from './stores/game'
 
 const store = useGameStore()
 const canvasRef = ref(null)
-const frame = ref(0)
+const engineRef = shallowRef(null)
 
-const statusText = computed(() => store.lastAction)
+const modeLabel = computed(() => MODE_LABELS[store.mode] || store.mode)
+const primaryLabel = computed(() => {
+  if (store.mode === 'menu') return '开始游戏'
+  if (store.mode === 'ready') return '发射小球'
+  if (store.mode === 'paused') return '继续游戏'
+  if (store.mode === 'won' || store.mode === 'lost') return '重新挑战'
+  return '暂停游戏'
+})
 
-function drawStage() {
-  const canvas = canvasRef.value
-  if (!canvas) return
-
-  const ctx = canvas.getContext('2d')
-  const width = canvas.width
-  const height = canvas.height
-
-  const background = ctx.createLinearGradient(0, 0, width, height)
-  background.addColorStop(0, '#101824')
-  background.addColorStop(1, '#162a34')
-  ctx.fillStyle = background
-  ctx.fillRect(0, 0, width, height)
-
-  ctx.strokeStyle = 'rgba(92, 225, 201, 0.08)'
-  ctx.lineWidth = 1
-  for (let x = 0; x <= width; x += 48) {
-    ctx.beginPath()
-    ctx.moveTo(x, 0)
-    ctx.lineTo(x, height)
-    ctx.stroke()
-  }
-  for (let y = 0; y <= height; y += 48) {
-    ctx.beginPath()
-    ctx.moveTo(0, y)
-    ctx.lineTo(width, y)
-    ctx.stroke()
-  }
-
-  const pulse = 0.72 + Math.sin(frame.value / 24) * 0.08
-  ctx.fillStyle = `rgba(92, 225, 201, ${pulse})`
-  ctx.beginPath()
-  ctx.arc(width / 2, height / 2 - 42, 28, 0, Math.PI * 2)
-  ctx.fill()
-
-  ctx.fillStyle = '#e7f7f2'
-  ctx.textAlign = 'center'
-  ctx.font = '700 34px system-ui, sans-serif'
-  ctx.fillText('GAME STAGE READY', width / 2, height / 2 + 38)
-  ctx.fillStyle = '#8aa8a5'
-  ctx.font = '18px system-ui, sans-serif'
-  ctx.fillText('方向已确定 · 下一阶段构建核心物理', width / 2, height / 2 + 76)
-}
-
-function advanceTime(milliseconds = 1000 / 60) {
-  frame.value += Math.max(1, Math.round(milliseconds / (1000 / 60)))
-  drawStage()
+function primaryAction() {
+  const engine = engineRef.value
+  if (!engine) return
+  if (store.mode === 'menu' || store.mode === 'won' || store.mode === 'lost') engine.startNewGame()
+  else if (store.mode === 'ready') engine.launch()
+  else engine.togglePause()
 }
 
 function toggleFullscreen() {
-  const canvas = canvasRef.value
-  if (!document.fullscreenElement) canvas?.requestFullscreen?.()
+  if (!document.fullscreenElement) canvasRef.value?.requestFullscreen?.()
   else document.exitFullscreen?.()
 }
 
-function handleKeydown(event) {
+function handleFullscreenKey(event) {
   if (event.key.toLowerCase() === 'f') toggleFullscreen()
 }
 
-function renderGameToText() {
-  return JSON.stringify({
-    coordinateSystem: 'canvas 960x540; origin top-left; x right; y down',
-    mode: store.mode,
-    projectName: store.projectName,
-    framework: ['Vue 3', 'Pinia', 'Vite'],
-    saveVersion: store.saveVersion,
-    bootCount: store.bootCount,
-    lastAction: store.lastAction,
-    stage: { width: 960, height: 540, status: 'ready' },
-    availableActions: ['test Pinia state', 'reset local state', 'F fullscreen'],
-  })
-}
-
-watch(() => store.lastAction, drawStage)
-
 onMounted(() => {
-  drawStage()
-  window.addEventListener('keydown', handleKeydown)
-  window.render_game_to_text = renderGameToText
-  window.advanceTime = advanceTime
+  const engine = new GameEngine(canvasRef.value, {
+    onStateChange: (snapshot) => store.syncFromEngine(snapshot),
+  })
+  engineRef.value = engine
+  engine.start()
+  window.addEventListener('keydown', handleFullscreenKey)
+  window.render_game_to_text = () => engine.getTextState()
+  window.advanceTime = (milliseconds) => engine.advanceTime(milliseconds)
+  if (import.meta.env.DEV) window.__NEON_BREAKER_TEST__ = engine
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('keydown', handleKeydown)
+  engineRef.value?.destroy()
+  window.removeEventListener('keydown', handleFullscreenKey)
   delete window.render_game_to_text
   delete window.advanceTime
+  delete window.__NEON_BREAKER_TEST__
 })
 </script>
 
 <template>
-  <main class="app-shell">
-    <header class="topbar">
-      <div>
-        <p class="eyebrow">PURE FRONTEND GAME STARTER</p>
-        <h1>霓虹打砖块开发基线</h1>
+  <main class="game-app">
+    <header class="game-header">
+      <div class="brand-lockup">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div>
+          <p>NEON ARCADE / BUILD 0.2</p>
+          <h1>NEON BREAKER</h1>
+        </div>
       </div>
-      <div class="stack-tags" aria-label="技术栈">
-        <span>Vue 3</span>
-        <span>Pinia</span>
-        <span>Vite</span>
+      <div class="build-status">
+        <span class="live-dot"></span>
+        核心物理原型
       </div>
     </header>
 
-    <section class="workspace">
-      <div class="stage-panel">
-        <div class="panel-heading">
-          <div>
-            <span class="status-dot"></span>
-            <strong>游戏舞台</strong>
+    <section class="game-layout">
+      <aside class="side-panel mission-panel">
+        <p class="panel-kicker">MISSION</p>
+        <h2>初次折射</h2>
+        <div class="level-number">01</div>
+
+        <dl class="stats-list">
+          <div><dt>当前得分</dt><dd>{{ String(store.score).padStart(6, '0') }}</dd></div>
+          <div><dt>最高得分</dt><dd>{{ String(store.bestScore).padStart(6, '0') }}</dd></div>
+          <div><dt>剩余砖块</dt><dd>{{ store.bricksRemaining }} / {{ store.totalBricks }}</dd></div>
+        </dl>
+
+        <div class="progress-block">
+          <div><span>清除进度</span><strong>{{ store.progressPercent }}%</strong></div>
+          <div class="progress-track"><span :style="{ width: `${store.progressPercent}%` }"></span></div>
+        </div>
+
+        <div class="life-readout">
+          <span>剩余生命</span>
+          <div aria-label="剩余生命">
+            <i v-for="index in 3" :key="index" :class="{ active: index <= store.lives }"></i>
           </div>
-          <span>960 × 540</span>
         </div>
-        <canvas ref="canvasRef" width="960" height="540" aria-label="空白游戏舞台"></canvas>
-      </div>
+      </aside>
 
-      <aside class="foundation-panel">
-        <p class="eyebrow">FOUNDATION</p>
-        <h2>基础能力已接通</h2>
-        <ul>
-          <li><span>01</span><div><strong>响应式界面</strong><small>Vue 3 Composition API</small></div></li>
-          <li><span>02</span><div><strong>全局游戏状态</strong><small>Pinia Store</small></div></li>
-          <li><span>03</span><div><strong>本地状态保存</strong><small>localStorage</small></div></li>
-          <li><span>04</span><div><strong>Canvas 游戏舞台</strong><small>v0.2.0 开始核心绘制</small></div></li>
-        </ul>
-
-        <div class="actions">
-          <button id="test-state" class="primary" type="button" @click="store.testState">测试 Pinia 状态</button>
-          <button type="button" @click="store.resetTemplate">重置本地状态</button>
+      <section class="playfield-shell">
+        <div class="playfield-topline">
+          <span><i></i>{{ modeLabel }}</span>
+          <strong>540 × 960</strong>
         </div>
-        <p class="state-output">{{ statusText }}</p>
-        <p class="shortcut">按 <kbd>F</kbd> 切换全屏</p>
+        <canvas
+          ref="canvasRef"
+          width="540"
+          height="960"
+          aria-label="霓虹打砖块游戏战场"
+        ></canvas>
+      </section>
+
+      <aside class="side-panel control-panel">
+        <p class="panel-kicker">CONTROL</p>
+        <h2>操作终端</h2>
+
+        <div class="status-card">
+          <span>当前状态</span>
+          <strong>{{ modeLabel }}</strong>
+          <small>{{ store.message }}</small>
+        </div>
+
+        <div class="control-guide">
+          <div><kbd>A</kbd><kbd>D</kbd><span>移动挡板</span></div>
+          <div><kbd>←</kbd><kbd>→</kbd><span>移动挡板</span></div>
+          <div><kbd>SPACE</kbd><span>发球 / 继续</span></div>
+          <div><kbd>P</kbd><span>暂停游戏</span></div>
+          <div><kbd>F</kbd><span>切换全屏</span></div>
+        </div>
+
+        <button id="primary-action" data-testid="primary-action" class="primary-action" type="button" @click="primaryAction">
+          {{ primaryLabel }}
+        </button>
+        <button class="secondary-action" type="button" @click="toggleFullscreen">全屏显示</button>
       </aside>
     </section>
 
-    <footer>
-      <span>下一步</span>
-      <p>v0.2.0 将实现挡板、小球、砖块、三条生命与完整胜负循环。</p>
+    <section class="mobile-command-bar">
+      <div>
+        <span>生命 {{ store.lives }}</span>
+        <strong>{{ modeLabel }}</strong>
+        <span>{{ store.bricksRemaining }} 砖</span>
+      </div>
+      <button type="button" @click="primaryAction">{{ primaryLabel }}</button>
+    </section>
+
+    <footer class="game-footer">
+      <span>CORE PROTOTYPE</span>
+      <p>鼠标、触摸拖动或方向键控制挡板 · 点击战场或按空格发球</p>
+      <strong>v0.2.0</strong>
     </footer>
   </main>
 </template>

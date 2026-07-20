@@ -2,26 +2,40 @@ import { defineStore } from 'pinia'
 
 export const useGameStore = defineStore('game', {
   state: () => ({
-    mode: 'planning',
+    mode: 'menu',
     projectName: 'Neon Breaker',
     saveVersion: 1,
-    bootCount: 0,
-    lastAction: 'v0.1.0 开发基线已就绪',
+    level: 1,
+    levelName: '初次折射',
+    lives: 3,
+    score: 0,
+    bestScore: 0,
+    bricksRemaining: 0,
+    totalBricks: 0,
+    message: '准备进入霓虹试炼',
     settings: {
-      soundEnabled: true,
-      fullscreenEnabled: true,
+      effectQuality: 'high',
+      screenShake: true,
     },
   }),
 
-  actions: {
-    testState() {
-      this.bootCount += 1
-      this.lastAction = `Pinia 状态测试成功 · ${this.bootCount}`
-    },
+  getters: {
+    progressPercent: (state) => state.totalBricks
+      ? Math.round((1 - state.bricksRemaining / state.totalBricks) * 100)
+      : 0,
+  },
 
-    resetTemplate() {
-      this.$reset()
-      this.lastAction = '本地模板状态已重置'
+  actions: {
+    syncFromEngine(snapshot) {
+      this.mode = snapshot.mode
+      this.level = snapshot.level
+      this.levelName = snapshot.levelName
+      this.lives = snapshot.lives
+      this.score = snapshot.score
+      this.bestScore = Math.max(this.bestScore, snapshot.bestScore)
+      this.bricksRemaining = snapshot.bricksRemaining
+      this.totalBricks = snapshot.totalBricks
+      this.message = snapshot.message
     },
   },
 })
