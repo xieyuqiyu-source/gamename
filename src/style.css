@@ -1,0 +1,83 @@
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #e9f2ef;
+  background: #091017;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #app { min-width: 320px; min-height: 100%; margin: 0; }
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(37, 105, 103, 0.22), transparent 32%),
+    #091017;
+}
+
+button, kbd { font: inherit; }
+
+button {
+  border: 1px solid #34525a;
+  border-radius: 10px;
+  padding: 12px 16px;
+  color: #cbdad7;
+  background: #121f27;
+  cursor: pointer;
+  transition: border-color 160ms ease, transform 160ms ease, background 160ms ease;
+}
+
+button:hover { border-color: #5ce1c9; transform: translateY(-1px); }
+button:focus-visible { outline: 2px solid #5ce1c9; outline-offset: 2px; }
+button.primary { color: #071310; border-color: #5ce1c9; background: #5ce1c9; font-weight: 750; }
+
+.app-shell { width: min(1440px, 100%); margin: 0 auto; padding: 36px 40px 28px; }
+
+.topbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 28px; margin-bottom: 28px; }
+.eyebrow { margin: 0 0 8px; color: #5ce1c9; font-size: 12px; font-weight: 800; letter-spacing: 0.16em; }
+h1 { margin: 0; font-size: clamp(30px, 4vw, 54px); letter-spacing: -0.04em; }
+h2 { margin: 0 0 22px; font-size: 25px; }
+
+.stack-tags { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.stack-tags span { padding: 8px 12px; border: 1px solid #28414a; border-radius: 999px; color: #a8bbb8; background: #0d1820; font-size: 13px; }
+
+.workspace { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; }
+.stage-panel, .foundation-panel { border: 1px solid #263d45; border-radius: 16px; background: rgba(13, 24, 32, 0.88); box-shadow: 0 20px 70px rgba(0, 0, 0, 0.18); overflow: hidden; }
+.panel-heading { height: 55px; padding: 0 18px; display: flex; align-items: center; justify-content: space-between; color: #78908e; font-size: 13px; }
+.panel-heading > div { display: flex; align-items: center; gap: 9px; color: #d8e6e2; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: #5ce1c9; box-shadow: 0 0 14px #5ce1c9; }
+
+canvas { display: block; width: 100%; aspect-ratio: 16 / 9; background: #111c27; }
+canvas:fullscreen { width: 100vw; height: 100vh; object-fit: contain; background: #091017; }
+
+.foundation-panel { padding: 25px; }
+.foundation-panel ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.foundation-panel li { display: flex; align-items: center; gap: 14px; padding: 13px; border: 1px solid #223740; border-radius: 10px; background: #101c24; }
+.foundation-panel li > span { color: #5ce1c9; font: 700 12px ui-monospace, monospace; }
+.foundation-panel li div { display: grid; gap: 3px; }
+.foundation-panel li strong { font-size: 14px; }
+.foundation-panel li small { color: #78908e; font-size: 12px; }
+.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 20px; }
+.actions button { padding-inline: 8px; font-size: 13px; white-space: nowrap; }
+.state-output { min-height: 20px; margin: 15px 0 0; color: #96aaa7; font-size: 13px; text-align: center; }
+.shortcut { margin: 12px 0 0; color: #627a79; font-size: 12px; text-align: center; }
+kbd { display: inline-grid; place-items: center; min-width: 22px; min-height: 22px; border: 1px solid #39535b; border-radius: 5px; color: #cde1dc; background: #111d24; }
+
+footer { display: flex; gap: 16px; align-items: center; margin-top: 20px; padding: 17px 20px; border-left: 2px solid #5ce1c9; background: rgba(21, 38, 46, 0.52); color: #8ca09d; }
+footer span { color: #5ce1c9; font-size: 12px; font-weight: 800; letter-spacing: 0.12em; }
+footer p { margin: 0; font-size: 14px; }
+
+@media (max-width: 960px) {
+  .app-shell { padding: 24px 18px; }
+  .workspace { grid-template-columns: 1fr; }
+  .foundation-panel { padding: 20px; }
+}
+
+@media (max-width: 600px) {
+  .topbar { align-items: flex-start; flex-direction: column; }
+  .stack-tags { justify-content: flex-start; }
+  .actions { grid-template-columns: 1fr; }
+  footer { align-items: flex-start; flex-direction: column; gap: 7px; }
+}
