@@ -14,6 +14,7 @@ const primaryLabel = computed(() => {
   if (store.mode === 'ready') return '发射小球'
   if (store.mode === 'paused') return '继续游戏'
   if (store.mode === 'won' || store.mode === 'lost') return '重新挑战'
+  if (store.activeEffects.some((effect) => effect.type === 'laser')) return '发射激光'
   return '暂停游戏'
 })
 
@@ -22,7 +23,12 @@ function primaryAction() {
   if (!engine) return
   if (store.mode === 'menu' || store.mode === 'won' || store.mode === 'lost') engine.startNewGame()
   else if (store.mode === 'ready') engine.launch()
+  else if (store.activeEffects.some((effect) => effect.type === 'laser')) engine.fireLaser()
   else engine.togglePause()
+}
+
+function pauseAction() {
+  engineRef.value?.togglePause()
 }
 
 function toggleFullscreen() {
@@ -37,6 +43,8 @@ function handleFullscreenKey(event) {
 onMounted(() => {
   const engine = new GameEngine(canvasRef.value, {
     onStateChange: (snapshot) => store.syncFromEngine(snapshot),
+    startingCoins: store.coins,
+    effectQuality: store.settings.effectQuality,
   })
   engineRef.value = engine
   engine.start()
@@ -61,13 +69,13 @@ onBeforeUnmount(() => {
       <div class="brand-lockup">
         <span class="brand-mark" aria-hidden="true"></span>
         <div>
-          <p>NEON ARCADE / BUILD 0.2</p>
+          <p>NEON ARCADE / BUILD 0.3</p>
           <h1>NEON BREAKER</h1>
         </div>
       </div>
       <div class="build-status">
         <span class="live-dot"></span>
-        核心物理原型
+        爽感与道具系统
       </div>
     </header>
 
@@ -81,6 +89,8 @@ onBeforeUnmount(() => {
           <div><dt>当前得分</dt><dd>{{ String(store.score).padStart(6, '0') }}</dd></div>
           <div><dt>最高得分</dt><dd>{{ String(store.bestScore).padStart(6, '0') }}</dd></div>
           <div><dt>剩余砖块</dt><dd>{{ store.bricksRemaining }} / {{ store.totalBricks }}</dd></div>
+          <div><dt>晶币库存</dt><dd class="coin-value">◈ {{ store.coins }}</dd></div>
+          <div><dt>最高连击</dt><dd>{{ store.maxCombo }} COMBO</dd></div>
         </dl>
 
         <div class="progress-block">
@@ -93,6 +103,10 @@ onBeforeUnmount(() => {
           <div aria-label="剩余生命">
             <i v-for="index in 3" :key="index" :class="{ active: index <= store.lives }"></i>
           </div>
+        </div>
+
+        <div class="combo-readout" :class="{ hot: store.combo >= 10 }">
+          <span>当前连击</span><strong>{{ store.combo }}</strong>
         </div>
       </aside>
 
@@ -119,10 +133,21 @@ onBeforeUnmount(() => {
           <small>{{ store.message }}</small>
         </div>
 
+        <div class="effect-rack">
+          <div class="rack-heading"><span>ACTIVE MODULES</span><strong>{{ store.activeEffects.length }}</strong></div>
+          <p v-if="!store.activeEffects.length" class="empty-effects">接住胶囊以激活战斗模块</p>
+          <div v-for="effect in store.activeEffects" :key="effect.type" class="effect-chip" :style="{ '--effect-color': effect.color }">
+            <i>{{ effect.short }}</i>
+            <span>{{ effect.name }}<small v-if="effect.stacks"> ×{{ effect.stacks }}</small></span>
+            <strong>{{ effect.remaining.toFixed(1) }}s</strong>
+          </div>
+        </div>
+
         <div class="control-guide">
           <div><kbd>A</kbd><kbd>D</kbd><span>移动挡板</span></div>
           <div><kbd>←</kbd><kbd>→</kbd><span>移动挡板</span></div>
           <div><kbd>SPACE</kbd><span>发球 / 继续</span></div>
+          <div><kbd>SPACE</kbd><span>激光模块射击</span></div>
           <div><kbd>P</kbd><span>暂停游戏</span></div>
           <div><kbd>F</kbd><span>切换全屏</span></div>
         </div>
@@ -130,23 +155,27 @@ onBeforeUnmount(() => {
         <button id="primary-action" data-testid="primary-action" class="primary-action" type="button" @click="primaryAction">
           {{ primaryLabel }}
         </button>
+        <button v-if="store.mode === 'playing' && store.activeEffects.some((effect) => effect.type === 'laser')" class="secondary-action" type="button" @click="pauseAction">暂停游戏</button>
         <button class="secondary-action" type="button" @click="toggleFullscreen">全屏显示</button>
       </aside>
     </section>
 
     <section class="mobile-command-bar">
       <div>
-        <span>生命 {{ store.lives }}</span>
-        <strong>{{ modeLabel }}</strong>
-        <span>{{ store.bricksRemaining }} 砖</span>
+        <span>♥ {{ store.lives }}</span>
+        <strong>{{ store.combo ? `${store.combo} 连击` : modeLabel }}</strong>
+        <span>◈ {{ store.coins }}</span>
+      </div>
+      <div v-if="store.activeEffects.length" class="mobile-effects">
+        <i v-for="effect in store.activeEffects" :key="effect.type" :style="{ '--effect-color': effect.color }">{{ effect.short }} {{ Math.ceil(effect.remaining) }}s</i>
       </div>
       <button type="button" @click="primaryAction">{{ primaryLabel }}</button>
     </section>
 
     <footer class="game-footer">
-      <span>CORE PROTOTYPE</span>
-      <p>鼠标、触摸拖动或方向键控制挡板 · 点击战场或按空格发球</p>
-      <strong>v0.2.0</strong>
+      <span>POWER DROP SYSTEM</span>
+      <p>接住胶囊激活 5 种模块 · 晶币会被挡板磁吸 · 多种效果可同时叠加</p>
+      <strong>v0.3.0</strong>
     </footer>
   </main>
 </template>

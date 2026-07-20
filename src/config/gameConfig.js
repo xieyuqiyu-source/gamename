@@ -29,6 +29,21 @@ export const BALL = {
   maxSpeed: 650,
 }
 
+export const POWERUPS = {
+  multiball: { name: '多球分裂', short: 'M', color: '#ff4da6', duration: 0 },
+  expand: { name: '挡板扩展', short: 'W', color: '#55f4dd', duration: 15 },
+  pierce: { name: '穿透光球', short: 'P', color: '#ffd166', duration: 8 },
+  slow: { name: '时流减速', short: 'S', color: '#55a7ff', duration: 10 },
+  laser: { name: '双轨激光', short: 'L', color: '#ff7b54', duration: 10 },
+}
+
+export const DROP = {
+  itemSpeed: 154,
+  coinGravity: 430,
+  magnetRange: 112,
+  maxDrops: 28,
+}
+
 export const LEVEL_ONE = {
   id: 1,
   name: '初次折射',

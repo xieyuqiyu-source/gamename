@@ -10,6 +10,12 @@ export const useGameStore = defineStore('game', {
     lives: 3,
     score: 0,
     bestScore: 0,
+    coins: 0,
+    combo: 0,
+    maxCombo: 0,
+    ballCount: 0,
+    dropCount: 0,
+    activeEffects: [],
     bricksRemaining: 0,
     totalBricks: 0,
     message: '准备进入霓虹试炼',
@@ -33,6 +39,12 @@ export const useGameStore = defineStore('game', {
       this.lives = snapshot.lives
       this.score = snapshot.score
       this.bestScore = Math.max(this.bestScore, snapshot.bestScore)
+      this.coins = snapshot.coins
+      this.combo = snapshot.combo
+      this.maxCombo = Math.max(this.maxCombo, snapshot.maxCombo)
+      this.ballCount = snapshot.ballCount
+      this.dropCount = snapshot.dropCount
+      this.activeEffects = snapshot.activeEffects
       this.bricksRemaining = snapshot.bricksRemaining
       this.totalBricks = snapshot.totalBricks
       this.message = snapshot.message

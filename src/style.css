@@ -49,6 +49,7 @@ button { cursor: pointer; }
 .stats-list div { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid rgba(78, 117, 124, 0.18); }
 .stats-list dt { color: #779397; font-size: 12px; }
 .stats-list dd { margin: 0; color: #dffaf5; font: 750 13px ui-monospace, monospace; }
+.stats-list dd.coin-value { color: #ffd166; text-shadow: 0 0 12px rgba(255, 209, 102, .35); }
 
 .progress-block { margin-top: 20px; }
 .progress-block > div:first-child { display: flex; justify-content: space-between; margin-bottom: 9px; color: #78979a; font-size: 11px; }
@@ -61,6 +62,11 @@ button { cursor: pointer; }
 .life-readout div { display: flex; gap: 7px; }
 .life-readout i { width: 10px; height: 10px; border-radius: 50%; background: #263b42; }
 .life-readout i.active { background: #ff4da6; box-shadow: 0 0 12px #ff4da6; }
+.combo-readout { display: flex; align-items: end; justify-content: space-between; margin-top: 10px; padding: 11px 14px; border: 1px solid rgba(255, 77, 166, .2); border-radius: 11px; background: rgba(255, 77, 166, .05); }
+.combo-readout span { color: #9a7d91; font-size: 10px; }
+.combo-readout strong { color: #ff78bd; font: 900 23px ui-monospace, monospace; line-height: 1; text-shadow: 0 0 18px rgba(255, 77, 166, .3); }
+.combo-readout.hot { border-color: rgba(255, 209, 102, .45); background: rgba(255, 209, 102, .08); }
+.combo-readout.hot strong { color: #ffd166; }
 
 .playfield-shell { width: min(100%, calc((100svh - 220px) * 9 / 16)); min-width: 280px; max-width: 432px; justify-self: center; overflow: hidden; }
 .playfield-topline { height: 45px; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; color: #6f8d91; font-size: 10px; letter-spacing: 0.08em; }
@@ -75,6 +81,15 @@ canvas:fullscreen { width: 100vw; height: 100vh; object-fit: contain; background
 .status-card span { color: #66868a; font-size: 10px; letter-spacing: 0.08em; }
 .status-card strong { color: #55f4dd; font-size: 15px; }
 .status-card small { color: #8ba4a5; font-size: 11px; line-height: 1.5; }
+.effect-rack { display: grid; gap: 7px; margin: 0 0 16px; }
+.rack-heading { display: flex; justify-content: space-between; color: #5d7e82; font-size: 9px; font-weight: 800; letter-spacing: .12em; }
+.rack-heading strong { color: #55f4dd; }
+.empty-effects { margin: 0; padding: 12px; border: 1px dashed #24434b; border-radius: 9px; color: #668286; font-size: 10px; line-height: 1.45; }
+.effect-chip { display: grid; grid-template-columns: 27px 1fr auto; align-items: center; gap: 8px; min-height: 37px; padding: 5px 9px 5px 5px; border: 1px solid color-mix(in srgb, var(--effect-color), transparent 68%); border-radius: 9px; background: color-mix(in srgb, var(--effect-color), transparent 93%); }
+.effect-chip i { width: 27px; height: 27px; display: grid; place-items: center; border-radius: 7px; color: #07131f; background: var(--effect-color); box-shadow: 0 0 15px color-mix(in srgb, var(--effect-color), transparent 50%); font-size: 11px; font-style: normal; font-weight: 950; }
+.effect-chip span { color: #c9dfdc; font-size: 10px; font-weight: 700; }
+.effect-chip small { color: var(--effect-color); }
+.effect-chip strong { color: var(--effect-color); font: 800 10px ui-monospace, monospace; }
 
 .control-guide { display: grid; gap: 8px; margin-bottom: 18px; }
 .control-guide div { min-height: 36px; display: flex; align-items: center; gap: 6px; }
@@ -116,10 +131,18 @@ kbd { min-width: 28px; height: 27px; display: inline-grid; place-items: center; 
   .mobile-command-bar > div { display: flex; align-items: center; justify-content: space-between; color: #6f8b8e; font-size: 10px; }
   .mobile-command-bar strong { color: #d8efea; }
   .mobile-command-bar button { min-height: 43px; border: 0; color: #061412; background: #55f4dd; }
+  .mobile-command-bar .mobile-effects { justify-content: center; flex-wrap: wrap; gap: 5px; }
+  .mobile-effects i { padding: 4px 7px; border: 1px solid color-mix(in srgb, var(--effect-color), transparent 55%); border-radius: 99px; color: var(--effect-color); background: color-mix(in srgb, var(--effect-color), transparent 92%); font-size: 9px; font-style: normal; font-weight: 850; }
   .game-footer { display: none; }
 }
 
 @media (max-width: 390px) {
   .build-status { display: none; }
   .playfield-shell { width: min(100%, calc((100svh - 192px) * 9 / 16)); }
+}
+
+@media (max-width: 720px) {
+  .game-app:has(.mobile-effects) .playfield-shell {
+    width: min(100%, calc((100svh - 232px) * 9 / 16));
+  }
 }
