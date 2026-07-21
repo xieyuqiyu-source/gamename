@@ -55,7 +55,7 @@
 .mission-detail dl div { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid rgba(85, 244, 221, .09); }
 .mission-detail dt { color: #6f8b8e; font-size: 9px; }
 .mission-detail dd { margin: 0; color: #dff8f3; font: 800 9px ui-monospace, monospace; }
-.detail-stars { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: auto 0 12px; padding: 0 2px; color: #718f92; font-size: 9px; }
+.detail-stars { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 1px 0 12px; padding: 7px 0; border-bottom: 1px solid rgba(85, 244, 221, .09); color: #718f92; font-size: 9px; }
 .detail-stars strong { display: inline-flex; align-items: center; gap: 5px; color: #ffd166; font: 800 9px ui-monospace, monospace; }
 .detail-stars strong i { color: #ffd166; font-size: 9px; font-style: normal; text-shadow: 0 0 8px rgba(255, 209, 102, .42); }
 .deploy-button { min-height: 44px; margin-top: 0; border: 0; border-radius: 10px; color: #061412; background: linear-gradient(100deg, var(--chapter-accent), #d9fff8); font-size: 11px; font-weight: 900; box-shadow: 0 10px 24px color-mix(in srgb, var(--chapter-accent), transparent 84%); }
@@ -198,7 +198,7 @@
   .mission-detail > p { min-height: 0; max-height: 28px; overflow: hidden; margin-bottom: 6px; }
   .boss-preview { gap: 1px; margin-bottom: 5px; padding: 5px 8px; }
   .mission-detail dl div { padding: 4px 0; }
-  .detail-stars { margin-top: 8px; }
+  .detail-stars { margin-top: 1px; padding: 4px 0; }
   .deploy-button { min-height: 38px; margin-top: 0; }
   .hub-lower-grid { margin-top: 8px; }
   .reward-track { padding-top: 7px; padding-bottom: 7px; }
@@ -254,7 +254,7 @@
   .boss-preview strong { text-align: right; }
   .boss-preview small { grid-column: 1 / -1; white-space: nowrap; }
   .mission-detail dl div { padding: 4px 0; }
-  .detail-stars { margin-top: 8px; }
+  .detail-stars { margin-top: 1px; padding: 4px 0; }
   .deploy-button { margin-top: 0; }
   .reward-track { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 76px; overflow-x: auto; scroll-snap-type: x mandatory; }
   .campaign-hub .reward-track { margin-top: 8px; }
@@ -337,7 +337,7 @@
   .boss-preview { margin: 0 0 4px; padding: 4px 7px; }
   .boss-preview small { font-size: 6px; }
   .mission-detail dl div { padding: 3px 0; }
-  .detail-stars { margin-top: 6px; margin-bottom: 8px; }
+  .detail-stars { margin-top: 1px; margin-bottom: 8px; padding: 3px 0; }
   .deploy-button { min-height: 38px; margin-top: 0; }
   .campaign-hub .hub-lower-grid { margin-top: 5px; }
   .campaign-hub .reward-track { padding-top: 6px; padding-bottom: 6px; }

@@ -123,10 +123,20 @@ try {
       const stars = document.querySelector('.detail-stars')
       const starsValue = document.querySelector('.detail-stars strong')
       const starsIcon = document.querySelector('.detail-stars strong i')
+      const starsLabel = document.querySelector('.detail-stars span')
+      const regularRow = document.querySelector('.mission-detail dl > div')
+      const regularLabel = document.querySelector('.mission-detail dl > div dt')
+      const regularValue = document.querySelector('.mission-detail dl > div dd')
       const deploy = document.querySelector('.deploy-button')
       const starsRect = stars?.getBoundingClientRect()
+      const starsLabelRect = starsLabel?.getBoundingClientRect()
+      const starsValueRect = starsValue?.getBoundingClientRect()
+      const regularRect = regularRow?.getBoundingClientRect()
+      const regularLabelRect = regularLabel?.getBoundingClientRect()
+      const regularValueRect = regularValue?.getBoundingClientRect()
       const deployRect = deploy?.getBoundingClientRect()
       const starsStyle = stars ? getComputedStyle(stars) : null
+      const regularStyle = regularRow ? getComputedStyle(regularRow) : null
       const starsValueStyle = starsValue ? getComputedStyle(starsValue) : null
       const starsIconStyle = starsIcon ? getComputedStyle(starsIcon) : null
       return {
@@ -134,8 +144,17 @@ try {
         overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
         overflowY: document.documentElement.scrollHeight > document.documentElement.clientHeight,
         gap: starsRect && deployRect ? Number((deployRect.top - starsRect.bottom).toFixed(2)) : null,
-        borderStyle: starsStyle?.borderStyle ?? null,
+        borderBottomStyle: starsStyle?.borderBottomStyle ?? null,
+        borderWidth: starsStyle?.borderBottomWidth ?? null,
         backgroundColor: starsStyle?.backgroundColor ?? null,
+        rowHeight: starsRect ? Number(starsRect.height.toFixed(2)) : null,
+        regularRowHeight: regularRect ? Number(regularRect.height.toFixed(2)) : null,
+        paddingTop: starsStyle?.paddingTop ?? null,
+        regularPaddingTop: regularStyle?.paddingTop ?? null,
+        paddingBottom: starsStyle?.paddingBottom ?? null,
+        regularPaddingBottom: regularStyle?.paddingBottom ?? null,
+        labelOffset: starsLabelRect && regularLabelRect ? Number((starsLabelRect.left - regularLabelRect.left).toFixed(2)) : null,
+        valueOffset: starsValueRect && regularValueRect ? Number((starsValueRect.right - regularValueRect.right).toFixed(2)) : null,
         fontSize: starsStyle?.fontSize ?? null,
         valueFontSize: starsValueStyle?.fontSize ?? null,
         valueFontWeight: starsValueStyle?.fontWeight ?? null,
@@ -146,16 +165,22 @@ try {
 
   const campaign390 = await inspectCampaignStarSpacing(390, 844)
   const campaignDesktop = await inspectCampaignStarSpacing(1124, 859)
-  const isPlainStarRow = (metrics) => metrics.borderStyle === 'none'
+  const isStandardStarRow = (metrics) => metrics.borderBottomStyle === 'solid'
+    && metrics.borderWidth === '1px'
     && metrics.backgroundColor === 'rgba(0, 0, 0, 0)'
+    && metrics.rowHeight === metrics.regularRowHeight
+    && metrics.paddingTop === metrics.regularPaddingTop
+    && metrics.paddingBottom === metrics.regularPaddingBottom
+    && metrics.labelOffset === 0
+    && metrics.valueOffset === 0
     && metrics.fontSize === '9px'
     && metrics.valueFontSize === '9px'
     && metrics.valueFontWeight === '800'
     && metrics.iconFontSize === '9px'
     && !metrics.overflowX
     && !metrics.overflowY
-  check(isPlainStarRow(campaign390) && campaign390.gap === 8, '390px 章节星级为简洁文字行且间距稳定', JSON.stringify(campaign390))
-  check(isPlainStarRow(campaignDesktop) && campaignDesktop.gap === 12, '桌面章节星级为简洁文字行且间距稳定', JSON.stringify(campaignDesktop))
+  check(isStandardStarRow(campaign390) && campaign390.gap === 8, '390px 章节星级与任务数据行完全对齐', JSON.stringify(campaign390))
+  check(isStandardStarRow(campaignDesktop) && campaignDesktop.gap === 12, '桌面章节星级与任务数据行完全对齐', JSON.stringify(campaignDesktop))
 
   const failedResponses = responses.filter((response) => response.status >= 400)
   check(failedResponses.length === 0, '生产资源请求无失败', JSON.stringify(failedResponses))
@@ -169,7 +194,7 @@ try {
 }
 
 console.log(JSON.stringify({
-  release: '霓虹破界：Neon Breaker v1.0.3 production bundle',
+  release: '霓虹破界：Neon Breaker v1.0.4 production bundle',
   summary: { passed: checks.filter((item) => item.passed).length, total: checks.length, failures },
   checks,
 }, null, 2))
