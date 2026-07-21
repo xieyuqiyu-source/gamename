@@ -116,6 +116,35 @@ try {
   check(cardsFit(settings390), '390px 设置四卡片完整', JSON.stringify(settings390))
   check(cardsFit(settings320), '320px 设置四卡片完整', JSON.stringify(settings320))
 
+  await page.getByRole('button', { name: '战役', exact: true }).click()
+  const inspectCampaignStarSpacing = async (width, height) => {
+    await page.setViewportSize({ width, height })
+    return page.evaluate(() => {
+      const stars = document.querySelector('.detail-stars')
+      const deploy = document.querySelector('.deploy-button')
+      const starsRect = stars?.getBoundingClientRect()
+      const deployRect = deploy?.getBoundingClientRect()
+      const starsStyle = stars ? getComputedStyle(stars) : null
+      return {
+        width: innerWidth,
+        overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+        overflowY: document.documentElement.scrollHeight > document.documentElement.clientHeight,
+        gap: starsRect && deployRect ? Number((deployRect.top - starsRect.bottom).toFixed(2)) : null,
+        borderStyle: starsStyle?.borderStyle ?? null,
+        backgroundColor: starsStyle?.backgroundColor ?? null,
+      }
+    })
+  }
+
+  const campaign390 = await inspectCampaignStarSpacing(390, 844)
+  const campaignDesktop = await inspectCampaignStarSpacing(1124, 859)
+  const isPlainStarRow = (metrics) => metrics.borderStyle === 'none'
+    && metrics.backgroundColor === 'rgba(0, 0, 0, 0)'
+    && !metrics.overflowX
+    && !metrics.overflowY
+  check(isPlainStarRow(campaign390) && campaign390.gap === 8, '390px 章节星级为简洁文字行且间距稳定', JSON.stringify(campaign390))
+  check(isPlainStarRow(campaignDesktop) && campaignDesktop.gap === 12, '桌面章节星级为简洁文字行且间距稳定', JSON.stringify(campaignDesktop))
+
   const failedResponses = responses.filter((response) => response.status >= 400)
   check(failedResponses.length === 0, '生产资源请求无失败', JSON.stringify(failedResponses))
   check(runtimeErrors.length === 0, '生产页面无控制台或运行错误', JSON.stringify(runtimeErrors))
@@ -128,7 +157,7 @@ try {
 }
 
 console.log(JSON.stringify({
-  release: '霓虹破界：Neon Breaker v1.0.1 production bundle',
+  release: '霓虹破界：Neon Breaker v1.0.2 production bundle',
   summary: { passed: checks.filter((item) => item.passed).length, total: checks.length, failures },
   checks,
 }, null, 2))

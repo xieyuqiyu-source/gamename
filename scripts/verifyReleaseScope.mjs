@@ -82,7 +82,7 @@ const html = readFileSync('index.html', 'utf8')
 const appSource = readFileSync('src/App.vue', 'utf8')
 const styleSource = readFileSync('src/style.css', 'utf8')
 const viteSource = readFileSync('vite.config.js', 'utf8')
-check(packageJson.name === 'neon-breaker' && packageJson.version === '1.0.1', '正式包身份', `${packageJson.name}@${packageJson.version}`)
+check(packageJson.name === 'neon-breaker' && packageJson.version === '1.0.2', '正式包身份', `${packageJson.name}@${packageJson.version}`)
 check(manifest.name.includes('霓虹破界') && manifest.orientation === 'portrait-primary', '竖屏 Web App 清单', manifest.name)
 check(html.includes('霓虹破界：Neon Breaker') && html.includes('manifest.webmanifest'), '发行元信息', 'title + description + manifest')
 check(viteSource.includes("base: './'"), '便携静态部署路径', "Vite base './'")
@@ -90,7 +90,7 @@ check(appSource.includes('window.render_game_to_text') && appSource.includes('wi
 check(styleSource.includes('safe-area-inset') && styleSource.includes('@media (max-width: 390px)') && styleSource.includes('min-width: 320px'), '双端与安全区样式', 'safe area + 720/390/320 breakpoints')
 
 console.log(JSON.stringify({
-  release: '霓虹破界：Neon Breaker v1.0.1',
+  release: '霓虹破界：Neon Breaker v1.0.2',
   summary: { passed: checks.filter((item) => item.passed).length, total: checks.length, failures },
   checks,
 }, null, 2))
