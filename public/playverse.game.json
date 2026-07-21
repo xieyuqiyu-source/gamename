@@ -1,0 +1,40 @@
+{
+  "$schema": "https://game.ccoos.cn/schemas/playverse-game.v1.schema.json",
+  "manifestVersion": 1,
+  "game": {
+    "slug": "neon-breaker",
+    "title": "NEON BREAKER",
+    "chineseTitle": "霓虹破界",
+    "summary": "操控霓虹挡板击穿四章砖阵，在高速连击、爆裂掉落与 Boss 弹幕中持续成长。",
+    "description": "《霓虹破界》是一款以经典 Breakout 为核心的纯前端竖屏街机游戏。玩家控制挡板反弹小球，在四章 20 个手工关卡中击碎强化砖、移动砖与机关砖，并迎战四个多阶段 Boss。多球、穿透、激光等五种正面道具与晶币永久升级强化爆裂连击体验；通关第 10 关后还可挑战持续增强的无尽磁域。",
+    "year": "2026",
+    "status": "playable",
+    "genres": ["Arcade", "Breakout", "Action"],
+    "tech": ["Vue 3", "Pinia", "Vite", "JavaScript", "Canvas 2D", "localStorage"],
+    "role": "独立开发 / 游戏设计 / 程序 / 视觉",
+    "accent": "#55f4dd",
+    "secondary": "#b980ff",
+    "art": 5,
+    "size": "standard",
+    "playUrl": "https://game.ccoos.cn/neon-breaker/",
+    "githubUrl": "https://github.com/xieyuqiyu-source/gamename",
+    "sections": [
+      {
+        "title": "游戏介绍",
+        "body": "控制底部霓虹挡板，让小球持续反弹并清空砖阵。四章 20 个手工关卡逐步加入强化砖、移动磁轨、熔芯连锁与 Boss 攻击模块，最终挑战星穹奇点。"
+      },
+      {
+        "title": "如何游玩",
+        "body": "电脑端可使用鼠标、A/D 或方向键移动挡板，点击战场或按 Space 发球，P 或 Esc 暂停，F 切换全屏；手机端在竖屏战场内拖动挡板并轻触发球。游戏支持键盘、鼠标和触摸，推荐使用现代浏览器。"
+      },
+      {
+        "title": "核心机制",
+        "body": "多球分裂、挡板扩展、穿透光球、时流减速和双轨激光可以组合生效；连击、晶币掉落、八档星级奖励与七类永久升级构成长线成长。通关第 10 关后解锁无尽磁域，波次会逐步提高球速和砖块耐久，并从第 3 波加入移动砖行。"
+      },
+      {
+        "title": "开发手记",
+        "body": "项目保留经典 Breakout 的直观操作，并以 Canvas 2D 固定时间步实现碰撞、Boss、弹幕和大量霓虹特效。Vue 3 负责界面，Pinia 管理低频状态与本地存档；游戏刻意不使用音频，以命中停顿、粒子、拖尾、闪光和震屏完成反馈。"
+      }
+    ]
+  }
+}

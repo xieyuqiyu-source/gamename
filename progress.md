@@ -149,3 +149,8 @@ TODO：
 - 2026-07-21：该行节奏维护补丁确定为 `v1.0.4`；Chrome 桌面、390×844、320×800 已确认普通行与星级行的行高、内边距和分隔线完全一致，三档页面无溢出，官方网页游戏客户端无错误文件。
 - 2026-07-21：首轮生产门禁因读取三边无框/底边实线的 `border-style` 简写得到 `none none solid` 而误判失败；页面几何证据全部正确，现改为精确断言 `border-bottom-style: solid`，避免将正确的单边分隔线判为失败。
 - 2026-07-21：`v1.0.4` 最终门禁通过：范围 21/21、Node 55/55、20/20 主线、无尽连续 5 波、生产浏览器 14/14；Chrome 默认桌面复核行高 21.5px、上下内边距 4px、左右偏移 0、按钮间距 12px且控制台无告警，独立复审 Critical/Important/Minor 均为 0。
+- 2026-07-21：新增 `public/playverse.game.json` 接入 Playverse 游戏宇宙，字段均由 README、源码、部署说明和 Git 远程核对；本地规则校验全部通过，官方网页游戏客户端确认战役入口与 Canvas 正常。外部 Schema 地址当前返回 `text/html`，已保留规范要求的固定 `$schema` 值并记录为 Playverse 服务端待修复项。
+- 2026-07-21：使用 Playverse 项目内的 Draft 2020-12 原始 Schema 对游戏清单执行 AJV 严格结构校验，结果为 `public/playverse.game.json valid`；Vite 开发服务返回 `200 application/json`，生产构建中的 `dist/playverse.game.json` 与源文件完全一致。
+- 2026-07-21：Playverse 接入独立审查发现 1 项 Minor：无尽模式移动砖行从第 3 波起固定加入，不应描述为“机关密度持续增长”；已改为可由实现直接证明的球速、砖块耐久逐步提高与第 3 波移动砖行规则。
+- 2026-07-21：GitHub 仓库 `xieyuqiyu-source/gamename` 已按用户授权由 Private 改为 Public，并添加 `playverse-game` Topic；公开前受控文件与 Git 历史高置信凭据扫描无命中，部署配置仅引用 GitHub Secrets 名称。
+- 2026-07-21：Playverse 接入最终门禁通过：本地 Draft 2020-12 Schema valid、范围 21/21、Node 55/55、20/20 主线、无尽连续 5 波、生产浏览器 14/14；定向复审确认原 Minor 已关闭，Critical/Important/Minor 均为 0。
