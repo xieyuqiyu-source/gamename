@@ -55,8 +55,8 @@
 .mission-detail dl div { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid rgba(85, 244, 221, .09); }
 .mission-detail dt { color: #6f8b8e; font-size: 9px; }
 .mission-detail dd { margin: 0; color: #dff8f3; font: 800 9px ui-monospace, monospace; }
-.detail-stars { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: auto 0 12px; padding: 0 2px; color: #718f92; font-size: 8px; }
-.detail-stars strong { display: inline-flex; align-items: center; gap: 5px; color: #ffd166; font: 850 8px ui-monospace, monospace; }
+.detail-stars { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: auto 0 12px; padding: 0 2px; color: #718f92; font-size: 9px; }
+.detail-stars strong { display: inline-flex; align-items: center; gap: 5px; color: #ffd166; font: 800 9px ui-monospace, monospace; }
 .detail-stars strong i { color: #ffd166; font-size: 9px; font-style: normal; text-shadow: 0 0 8px rgba(255, 209, 102, .42); }
 .deploy-button { min-height: 44px; margin-top: 0; border: 0; border-radius: 10px; color: #061412; background: linear-gradient(100deg, var(--chapter-accent), #d9fff8); font-size: 11px; font-weight: 900; box-shadow: 0 10px 24px color-mix(in srgb, var(--chapter-accent), transparent 84%); }
 .deploy-button:disabled { color: #658083; background: #173038; box-shadow: none; cursor: not-allowed; }

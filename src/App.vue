@@ -583,7 +583,7 @@ onBeforeUnmount(() => {
     <footer v-show="['title', 'game'].includes(store.screen)" class="game-footer">
       <span>ARCADE CAMPAIGN COMPLETE</span>
       <p>20 关全章节 · 四大核心 · 组合弹幕 · 双端战斗</p>
-      <strong>v1.0.2</strong>
+      <strong>v1.0.3</strong>
     </footer>
   </main>
 </template>

@@ -121,10 +121,14 @@ try {
     await page.setViewportSize({ width, height })
     return page.evaluate(() => {
       const stars = document.querySelector('.detail-stars')
+      const starsValue = document.querySelector('.detail-stars strong')
+      const starsIcon = document.querySelector('.detail-stars strong i')
       const deploy = document.querySelector('.deploy-button')
       const starsRect = stars?.getBoundingClientRect()
       const deployRect = deploy?.getBoundingClientRect()
       const starsStyle = stars ? getComputedStyle(stars) : null
+      const starsValueStyle = starsValue ? getComputedStyle(starsValue) : null
+      const starsIconStyle = starsIcon ? getComputedStyle(starsIcon) : null
       return {
         width: innerWidth,
         overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
@@ -132,6 +136,10 @@ try {
         gap: starsRect && deployRect ? Number((deployRect.top - starsRect.bottom).toFixed(2)) : null,
         borderStyle: starsStyle?.borderStyle ?? null,
         backgroundColor: starsStyle?.backgroundColor ?? null,
+        fontSize: starsStyle?.fontSize ?? null,
+        valueFontSize: starsValueStyle?.fontSize ?? null,
+        valueFontWeight: starsValueStyle?.fontWeight ?? null,
+        iconFontSize: starsIconStyle?.fontSize ?? null,
       }
     })
   }
@@ -140,6 +148,10 @@ try {
   const campaignDesktop = await inspectCampaignStarSpacing(1124, 859)
   const isPlainStarRow = (metrics) => metrics.borderStyle === 'none'
     && metrics.backgroundColor === 'rgba(0, 0, 0, 0)'
+    && metrics.fontSize === '9px'
+    && metrics.valueFontSize === '9px'
+    && metrics.valueFontWeight === '800'
+    && metrics.iconFontSize === '9px'
     && !metrics.overflowX
     && !metrics.overflowY
   check(isPlainStarRow(campaign390) && campaign390.gap === 8, '390px 章节星级为简洁文字行且间距稳定', JSON.stringify(campaign390))
@@ -157,7 +169,7 @@ try {
 }
 
 console.log(JSON.stringify({
-  release: '霓虹破界：Neon Breaker v1.0.2 production bundle',
+  release: '霓虹破界：Neon Breaker v1.0.3 production bundle',
   summary: { passed: checks.filter((item) => item.passed).length, total: checks.length, failures },
   checks,
 }, null, 2))
