@@ -18,6 +18,22 @@
     "size": "standard",
     "playUrl": "https://game.ccoos.cn/neon-breaker/",
     "githubUrl": "https://github.com/xieyuqiyu-source/gamename",
+    "media": {
+      "cover": {
+        "url": "./playverse/cover.webp",
+        "alt": "《霓虹破界》第 20 关终局 Boss 星穹奇点第四阶段，核心暴露、双攻击模块与紫色弹幕同屏"
+      },
+      "screenshots": [
+        {
+          "url": "./playverse/screenshot-01.webp",
+          "alt": "《霓虹破界》战役星图，展示四个章节、20 个关卡、任务目标与累计星级奖励"
+        },
+        {
+          "url": "./playverse/screenshot-02.webp",
+          "alt": "《霓虹破界》第一关实际游玩画面，霓虹小球正飞向普通砖与紫色强化砖阵"
+        }
+      ]
+    },
     "sections": [
       {
         "title": "游戏介绍",

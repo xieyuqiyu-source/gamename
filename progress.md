@@ -154,3 +154,6 @@ TODO：
 - 2026-07-21：Playverse 接入独立审查发现 1 项 Minor：无尽模式移动砖行从第 3 波起固定加入，不应描述为“机关密度持续增长”；已改为可由实现直接证明的球速、砖块耐久逐步提高与第 3 波移动砖行规则。
 - 2026-07-21：GitHub 仓库 `xieyuqiyu-source/gamename` 已按用户授权由 Private 改为 Public，并添加 `playverse-game` Topic；公开前受控文件与 Git 历史高置信凭据扫描无命中，部署配置仅引用 GitHub Secrets 名称。
 - 2026-07-21：Playverse 接入最终门禁通过：本地 Draft 2020-12 Schema valid、范围 21/21、Node 55/55、20/20 主线、无尽连续 5 波、生产浏览器 14/14；定向复审确认原 Minor 已关闭，Critical/Important/Minor 均为 0。
+- 2026-07-21：按新版 Playverse 图片规范补充真实游戏媒体：`cover.webp` 取自第 20 关星穹奇点第四阶段实战，`screenshot-01.webp` 展示战役星图，`screenshot-02.webp` 展示第一关发球破砖；三张均为无浏览器边框的 1600×900 WebP，单张 37～41 KB。
+- 2026-07-21：媒体清单通过新版 Draft 2020-12 Schema；三张图片的本地 URL 均返回 `200 image/webp`，Vite 构建原样复制 Manifest 与媒体文件，官方网页游戏客户端确认战役入口、Canvas 和文本状态正常且无错误文件。
+- 2026-07-21：Playverse 媒体补全最终门禁通过：范围 21/21、Node 55/55、20/20 主线、无尽连续 5 波、生产浏览器 14/14；独立逐图复审确认构图、实机真实性、压缩质量、alt 与相对路径一致，Critical/Important/Minor 均为 0。
