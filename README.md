@@ -179,6 +179,34 @@ http://localhost:5173/
 pnpm build
 ```
 
+## 线上部署
+
+当前项目按实际项目名 `neon-breaker` 发布在游戏域名子路径：
+
+- 生产地址：`https://game.ccoos.cn/neon-breaker/`
+- GitHub 仓库：`xieyuqiyu-source/gamename`
+- 服务器部署目录：`/srv/game.ccoos.cn/neon-breaker`
+- 线上静态入口：`/srv/game.ccoos.cn/neon-breaker/current`
+
+部署流程采用“GitHub 触发、服务器构建”的方式：
+
+1. 本地提交并推送到 `main` 分支。
+2. GitHub Actions 只通过 SSH 触发服务器上的 `/usr/local/bin/deploy-neon-breaker`。
+3. 服务器使用只读 deploy key 拉取仓库最新代码。
+4. 服务器执行 `pnpm install --frozen-lockfile` 和 `pnpm build`。
+5. 构建成功后将新的 `dist` 产物切换到 `/srv/game.ccoos.cn/neon-breaker/current`。
+6. Nginx 将 `/neon-breaker/` 路径映射到该静态入口。
+
+GitHub Actions 需要配置以下仓库 Secrets：
+
+| Secret | 说明 |
+| --- | --- |
+| `NEON_BREAKER_DEPLOY_HOST` | 生产服务器 IP 或域名 |
+| `NEON_BREAKER_DEPLOY_USER` | SSH 用户，当前为 `root` |
+| `NEON_BREAKER_DEPLOY_KEY` | 仅允许触发部署脚本的 SSH 私钥 |
+
+注意：GitHub Actions 不在 GitHub Runner 上安装依赖、构建或部署产物，所有生产构建都在服务器完成。
+
 正式发行全门禁：
 
 ```bash
