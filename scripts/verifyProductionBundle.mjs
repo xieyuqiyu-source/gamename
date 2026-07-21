@@ -128,7 +128,7 @@ try {
 }
 
 console.log(JSON.stringify({
-  release: '霓虹破界：Neon Breaker v1.0.0 production bundle',
+  release: '霓虹破界：Neon Breaker v1.0.1 production bundle',
   summary: { passed: checks.filter((item) => item.passed).length, total: checks.length, failures },
   checks,
 }, null, 2))

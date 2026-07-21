@@ -109,9 +109,8 @@ function bossFeatureLabel(boss) {
           <div><dt>清关奖励</dt><dd>◈ {{ selectedLevel.clearBonus }}</dd></div>
           <div><dt>历史最高</dt><dd>{{ selectedRecord.highScore }}</dd></div>
         </dl>
-        <div class="detail-stars">
-          <span>章节星级</span><strong>{{ chapterStars }} / 15</strong>
-          <div><i :style="{ width: `${chapterStars / 15 * 100}%` }"></i></div>
+        <div class="detail-stars" :aria-label="`章节星级 ${chapterStars} / 15`">
+          <span>章节星级</span><strong><i aria-hidden="true">★</i>{{ chapterStars }} / 15</strong>
         </div>
         <button class="deploy-button" type="button" :disabled="!selectedUnlocked" data-testid="deploy-level" @click="playSelected">
           {{ selectedUnlocked ? '部署此关' : `通关第 ${selectedLevel.id - 1} 关后解锁` }}
